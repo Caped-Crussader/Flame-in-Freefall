@@ -118,4 +118,4 @@ Port the features from `example_project/Flame-in-Freefall/frontend/src/` (React)
 ### Phase 5: Verification & Local Launch
 1. Run the migrated test suite (`pytest`) to verify ingestion, DuckDB query compilation, Qdrant hybrid search, and API endpoints (`/api/v1/*`).
 2. Start both FastAPI (`:8000`) and Streamlit (`:8501`) via `scripts/run_local.sh` and verify every page end-to-end.
-3. Clean up or archive `example_project/` once everything is verified (only if you ask).
+
