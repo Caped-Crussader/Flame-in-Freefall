@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from flame.api.insights import (
     FlammabilityEngine,
+    MissionSafetyDossierResponse,
     RiskSimulationRequest,
     RiskSimulationResponse,
 )
@@ -284,6 +285,16 @@ def simulate_risk(
     return engine.simulate(body)
 
 
+@router.post("/insights/dossier", response_model=MissionSafetyDossierResponse, tags=["Insights"])
+def generate_safety_dossier(
+    body: RiskSimulationRequest,
+    request: Request,
+) -> MissionSafetyDossierResponse:
+    """Generate an exportable NASA-style Mission Fire-Safety Dossier (Markdown + Print-Ready PDF/HTML)."""
+    engine = get_flammability_engine(request)
+    return engine.generate_safety_dossier(body)
+
+
 @router.get("/evaluation", tags=["Evaluation"])
 def get_evaluation_scorecard() -> dict[str, Any]:
     """Return the latest 65-question Golden Benchmark evaluation scorecard."""
@@ -304,6 +315,26 @@ def trigger_evaluation_run() -> dict[str, Any]:
     from evaluation.run_eval import run_evaluation
 
     return run_evaluation()
+
+
+@router.get("/literature", tags=["RAG"])
+def search_literature(
+    q: str | None = Query(None, description="Optional search query over PSI dossiers & NTRS literature."),
+    limit: int = Query(10, ge=1, le=50, description="Max passages to return."),
+) -> dict[str, Any]:
+    """List or hybrid-search NASA PSI Investigation Dossiers and NTRS combustion literature."""
+    from flame.retrieval.literature import LiteratureRetriever
+
+    retriever = LiteratureRetriever()
+    all_docs = retriever.list_all()
+    if q and q.strip():
+        items = retriever.search(question=q.strip(), limit=limit)
+    else:
+        items = all_docs[:limit]
+    return {
+        "total": len(all_docs),
+        "items": items,
+    }
 
 
 __all__ = ["router"]

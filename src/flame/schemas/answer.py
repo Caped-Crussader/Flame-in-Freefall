@@ -69,6 +69,11 @@ class AskResponse(BaseModel):
         description="Computed aggregate results (AggregateResult dumps) with exclusion counts.",
     )
 
+    literature: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Retrieved NASA PSI investigation dossiers and technical literature passages.",
+    )
+
     plan: dict[str, Any] = Field(
         default_factory=dict,
         description="The interpreted QueryPlan echoed back for transparency.",

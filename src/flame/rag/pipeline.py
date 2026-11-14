@@ -17,6 +17,7 @@ from flame.rag.guardrails import run_guardrails
 from flame.rag.planner import QueryPlanner
 from flame.retrieval.catalog import FieldCatalog
 from flame.retrieval.fusion import fuse_retrieval
+from flame.retrieval.literature import LiteratureRetriever
 from flame.retrieval.store import ExperimentStore
 from flame.retrieval.structured import AggregateResult
 from flame.schemas.answer import AnswerStatus, AskResponse, CitationRecord
@@ -310,12 +311,24 @@ def ask(
     all_warnings: list[str] = list(retrieval_result.warnings) + guard_result.warnings
     all_limitations: list[str] = guard_result.limitations
 
+    try:
+        lit_passages = LiteratureRetriever().search(
+            question=question,
+            plan=plan_result.plan,
+            evidence_rows=retrieval_result.rows,
+            limit=4,
+        )
+    except Exception as lit_err:
+        logger.warning("Literature retrieval failed: %s", lit_err)
+        lit_passages = []
+
     return AskResponse(
         question=question,
         answer_markdown=guard_result.answer_text,
         citations=citations,
         evidence=retrieval_result.rows[: cfg.evidence_row_cap],
         aggregates=[a.model_dump() for a in retrieval_result.aggregates],
+        literature=lit_passages,
         plan=plan_result.plan.model_dump(),
         limitations=all_limitations,
         warnings=all_warnings,

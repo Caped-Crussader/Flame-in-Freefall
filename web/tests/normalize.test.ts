@@ -28,6 +28,31 @@ describe('normalizeAsk', () => {
   it('rejects an unknown status', () => {
     expect(() => normalizeAsk({ question: 'q', status: 'weird' })).toThrow(ApiError);
   });
+  it('normalizes multi-document literature passages when present', () => {
+    const r = normalizeAsk({
+      ...RAW_ASK,
+      literature: [
+        {
+          doc_id: 'PSI-10',
+          source_type: 'NASA_PSI_DOSSIER',
+          title: 'Flame Extinguishment Experiment (FLEX)',
+          accession: 'PSI-10',
+          acronym: 'FLEX',
+          doi: '10.25966/d74a-fd73',
+          url: 'https://psi.nasa.gov/investigations/PSI-10',
+          authors: ['Forman A. Williams'],
+          platform: 'International Space Station (ISS)',
+          hardware: 'CIR-MDCA',
+          related_families: ['FLEX'],
+          snippet: 'Cool flames around 740 K in microgravity.',
+          score: 0.0328,
+        },
+      ],
+    });
+    expect(r.literature).toHaveLength(1);
+    expect(r.literature?.[0].doc_id).toBe('PSI-10');
+    expect(r.literature?.[0].acronym).toBe('FLEX');
+  });
 });
 
 describe('normalizeMeta', () => {

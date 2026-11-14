@@ -229,6 +229,106 @@ export default function App() {
                     aggregateCount={result.aggregates.length}
                   />
                   <EvidenceTable rows={result.evidence} highlight={highlight} onOpen={setOpen} />
+                  {result.literature && result.literature.length > 0 && (
+                    <section className="card" aria-label="Grounded NASA Literature and PSI Dossiers">
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                        <h2 style={{ margin: 0 }}>📚 Grounded NASA PSI Dossiers & NTRS Literature Context</h2>
+                        <span className="tag mono">
+                          Multi-Doc Hybrid RAG ({result.literature.length} Passages)
+                        </span>
+                      </div>
+                      <p className="k" style={{ marginTop: 4, marginBottom: 12 }}>
+                        Retrieved in parallel from 24 official NASA Physical Sciences Informatics (PSI) investigation
+                        dossiers and 7 curated NASA Technical Reports Server (NTRS) & Researcher&apos;s Guide documents.
+                      </p>
+                      <div
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(auto-fit, minmax(290px, 1fr))',
+                          gap: 12,
+                        }}
+                      >
+                        {result.literature.map((lit) => (
+                          <article
+                            key={lit.doc_id}
+                            className="nx-card"
+                            style={{
+                              padding: 14,
+                              display: 'flex',
+                              flexDirection: 'column',
+                              justifyContent: 'space-between',
+                              gap: 8,
+                            }}
+                          >
+                            <div>
+                              <div
+                                style={{
+                                  display: 'flex',
+                                  justifyContent: 'space-between',
+                                  alignItems: 'center',
+                                  gap: 6,
+                                  marginBottom: 6,
+                                }}
+                              >
+                                <span className="tag mono" style={{ color: '#fb923c' }}>
+                                  {lit.accession ?? lit.doc_id}
+                                  {lit.acronym ? ` · ${lit.acronym}` : ''}
+                                </span>
+                                <span className="k mono" style={{ fontSize: 11 }}>
+                                  RRF {lit.score.toFixed(3)}
+                                </span>
+                              </div>
+                              <h3 style={{ fontSize: 14, margin: '0 0 6px', lineHeight: 1.35 }}>
+                                {lit.url ? (
+                                  <a
+                                    href={lit.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="link-btn"
+                                    style={{ fontWeight: 700 }}
+                                  >
+                                    {lit.title} ↗
+                                  </a>
+                                ) : (
+                                  lit.title
+                                )}
+                              </h3>
+                              <p
+                                className="k"
+                                style={{
+                                  margin: 0,
+                                  fontSize: 12.5,
+                                  lineHeight: 1.45,
+                                  color: '#cbd5e1',
+                                }}
+                              >
+                                {lit.snippet}
+                              </p>
+                            </div>
+                            <div
+                              style={{
+                                display: 'flex',
+                                flexWrap: 'wrap',
+                                gap: 6,
+                                marginTop: 6,
+                                paddingTop: 6,
+                                borderTop: '1px solid rgba(255,255,255,0.07)',
+                                fontSize: 11,
+                              }}
+                            >
+                              {lit.platform && <span className="tag">{lit.platform}</span>}
+                              {lit.doi && <span className="tag mono">DOI: {lit.doi}</span>}
+                              {lit.related_families.slice(0, 3).map((fam) => (
+                                <span key={fam} className="tag mono" style={{ color: '#38bdf8' }}>
+                                  {fam}
+                                </span>
+                              ))}
+                            </div>
+                          </article>
+                        ))}
+                      </div>
+                    </section>
+                  )}
                   {result.request_id && (
                     <p className="k">
                       Request ID: <span className="mono">{result.request_id}</span>

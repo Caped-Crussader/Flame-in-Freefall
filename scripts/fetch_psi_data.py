@@ -6,11 +6,11 @@ Run:
 import json
 from pathlib import Path
 
-from backend.app.core.config import settings
 from backend.app.core.http import get_session
 
+ROOT_DIR = Path(__file__).resolve().parents[1]
 PSI_BASE = "https://psi.nasa.gov/geode-py/ws"
-RAW_PSI_DIR = settings.DATA_RAW_DIR / "psi"
+RAW_PSI_DIR = ROOT_DIR / "data" / "raw" / "psi"
 
 
 def download_study_file(session, accession: str, file_obj: dict, out_dir: Path) -> Path | None:

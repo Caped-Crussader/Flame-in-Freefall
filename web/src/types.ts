@@ -46,6 +46,22 @@ export interface Citation {
   dataset_family: string | null;
 }
 
+export interface LiteraturePassage {
+  doc_id: string;
+  source_type: string;
+  title: string;
+  accession: string | null;
+  acronym: string | null;
+  doi: string | null;
+  url: string | null;
+  authors: string[];
+  platform: string | null;
+  hardware: string | null;
+  related_families: string[];
+  snippet: string;
+  score: number;
+}
+
 export interface AskResult {
   /** Not part of the success body; read from the x-request-id header when present. */
   request_id: string | null;
@@ -53,6 +69,8 @@ export interface AskResult {
   answer: string;
   evidence: EvidenceRow[];
   citations: Citation[];
+  /** Multi-document NASA PSI + NTRS literature passages grounded to the query. */
+  literature?: LiteraturePassage[];
   /** Aggregate results exactly as returned. */
   aggregates: Record<string, unknown>[];
   /** Numeric exclusion counts found in aggregate results (key -> total). */

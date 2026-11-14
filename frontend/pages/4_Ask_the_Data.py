@@ -91,6 +91,21 @@ with tab_qa:
             st.markdown("#### 🔗 Verified Experiment Citations")
             st.dataframe(pd.DataFrame(citations), use_container_width=True, hide_index=True)
 
+        literature = resp.get("literature", [])
+        if literature:
+            st.markdown(f"#### 📚 Grounded NASA PSI Dossiers & NTRS Literature Context ({len(literature)} Passages)")
+            lit_cols = st.columns(min(2, len(literature)))
+            for idx, lit in enumerate(literature):
+                with lit_cols[idx % len(lit_cols)]:
+                    with st.container(border=True):
+                        st.markdown(
+                            f"**[{lit.get('accession') or lit.get('doc_id')}] {lit.get('title')}** "
+                            f"(`RRF {lit.get('score', 0):.3f}`)"
+                        )
+                        st.caption(lit.get("snippet", ""))
+                        if lit.get("url"):
+                            st.markdown(f"[Open Official NASA Source ↗]({lit.get('url')})")
+
         # Sub-tabs for PlanPanel, Aggregates, EvidenceTable, Limitations
         t_plan, t_ev, t_agg, t_lim = st.tabs(
             [

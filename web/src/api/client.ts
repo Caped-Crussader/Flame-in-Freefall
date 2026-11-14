@@ -199,12 +199,74 @@ export interface FlammabilityEnvelope {
   }[];
 }
 
+export interface PhysicsDiagnostics {
+  oxygen_partial_pressure_kpa: number;
+  normoxic_po2_ratio: number;
+  diluent_to_o2_ratio: number;
+  peclet_transport_factor: number;
+  moc_0g_limit_o2_pct: number;
+  moc_1g_std6001_limit_o2_pct: number;
+  moc_safety_margin_o2_pct: number;
+  transport_regime: string;
+}
+
+export interface UncertaintyBounds {
+  sustained_prob_std: number;
+  burning_rate_ci90_mms: [number, number];
+  flame_temp_ci90_k: [number, number];
+  confidence_level: string;
+  confidence_score: number;
+}
+
+export interface ExtinguishantOption {
+  agent_name: string;
+  suitability: string;
+  effectiveness_pct: number;
+  mechanism_and_tradeoff: string;
+  cited_experiments: string[];
+}
+
+export interface DetectionEvidenceRow {
+  experiment_id: string;
+  dataset_family: string;
+  fuel_material: string;
+  co_ppm: number | null;
+  extinction_outcome: string;
+  key_insight: string;
+}
+
+export interface DetectionSuppressionAdvisor {
+  recommended_detector_modality: string;
+  smoke_cmd_0g_um: number;
+  smoke_cmd_1g_um: number;
+  photoelectric_sensitivity: number;
+  ionization_sensitivity: number;
+  estimated_alarm_time_s: number;
+  detector_rationale: string;
+  lunar_dust_discrimination_note: string;
+  primary_extinguishant: string;
+  secondary_extinguishant: string;
+  required_co2_inerting_pct: number;
+  limiting_oxygen_index_pct: number;
+  extinguishant_options: ExtinguishantOption[];
+  estimated_peak_co_ppm: number;
+  nasa_smac_1hr_co_ppm: number;
+  nasa_smac_24hr_co_ppm: number;
+  co_toxicity_level: string;
+  secondary_toxic_byproducts: string[];
+  post_fire_cleanup_steps: string[];
+  evidence_experiments: DetectionEvidenceRow[];
+}
+
 export interface RiskSimulationResult {
   risk_score: number;
   risk_level: string;
   sustained_burn_probability: number;
   predicted_burning_rate_mms: number;
   predicted_flame_temp_k: number;
+  physics_diagnostics?: PhysicsDiagnostics;
+  uncertainty?: UncertaintyBounds;
+  detection_suppression?: DetectionSuppressionAdvisor;
   std6001_comparison: string;
   recommendations: string[];
   nearest_experiments: {
@@ -236,6 +298,30 @@ export async function simulateRisk(
     signal,
   });
   return json as RiskSimulationResult;
+}
+
+export interface MissionSafetyDossier {
+  dossier_id: string;
+  generated_at_utc: string;
+  dataset_sha256: string;
+  certification_status: string;
+  risk_level: string;
+  risk_score: number;
+  markdown_report: string;
+  html_printable: string;
+}
+
+export async function generateSafetyDossier(
+  input: RiskSimulationInput,
+  signal?: AbortSignal,
+): Promise<MissionSafetyDossier> {
+  const { json } = await request('/insights/dossier', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+    signal,
+  });
+  return json as MissionSafetyDossier;
 }
 
 export interface EvaluationScorecard {

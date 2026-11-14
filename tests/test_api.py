@@ -75,6 +75,46 @@ def test_insights_ranking_and_risk_simulator():
     assert len(env["moc_1g_std6001_o2_pct"]) == 19
     assert len(env["airflow_risk_matrix"]) == 19
 
+    # Priority 3: Physics-informed diagnostics & 90% prediction interval bounds
+    phys = risk_body["physics_diagnostics"]
+    assert phys["oxygen_partial_pressure_kpa"] > 18.0
+    assert phys["moc_0g_limit_o2_pct"] < phys["moc_1g_std6001_limit_o2_pct"]
+    assert phys["peclet_transport_factor"] > 0.0
+    assert len(phys["transport_regime"]) > 5
+
+    unc = risk_body["uncertainty"]
+    assert len(unc["burning_rate_ci90_mms"]) == 2
+    assert unc["burning_rate_ci90_mms"][0] <= unc["burning_rate_ci90_mms"][1]
+    assert len(unc["flame_temp_ci90_k"]) == 2
+    assert unc["flame_temp_ci90_k"][0] <= unc["flame_temp_ci90_k"][1]
+    assert unc["confidence_level"] in {"HIGH", "MODERATE", "EXPLORATORY"}
+
+    # Priority 2: Detection, Suppression & Post-Fire Cleanup Advisor (SAME, DAFT, SLICE, SAFFIRE)
+    det = risk_body["detection_suppression"]
+    assert det["smoke_cmd_0g_um"] > det["smoke_cmd_1g_um"]
+    assert 0.0 < det["photoelectric_sensitivity"] <= 1.0
+    assert 0.0 < det["ionization_sensitivity"] <= 1.0
+    assert len(det["extinguishant_options"]) == 4
+    assert det["estimated_peak_co_ppm"] > 0.0
+    assert len(det["post_fire_cleanup_steps"]) == 4
+    assert len(det["evidence_experiments"]) >= 4
+
+    # Priority 5: Exportable Mission Safety Dossier (Markdown + Print-Ready PDF/HTML)
+    r_dossier = client.post(
+        "/api/v1/insights/dossier",
+        json={
+            "oxygen_pct": 34.0,
+            "pressure_kpa": 56.5,
+            "airflow_velocity_cms": 10.0,
+            "fuel_material": "SIBAL (Cotton-Fiberglass Blend)",
+        },
+    )
+    assert r_dossier.status_code == 200
+    d_body = r_dossier.json()
+    assert d_body["dossier_id"].startswith("IGNIS-CERT-")
+    assert "SPACECRAFT & HABITAT FIRE-SAFETY CERTIFICATION DOSSIER" in d_body["markdown_report"]
+    assert "<svg" in d_body["html_printable"]
+
 
 def test_evaluation_scorecard():
     r_eval = client.get("/api/v1/evaluation")
@@ -106,3 +146,16 @@ def test_ask_structured_and_qualitative():
     b2 = r2.json()
     assert b2["status"] == "answered"
     assert len(b2["evidence"]) > 0
+    assert len(b2["literature"]) >= 2
+
+
+def test_literature_endpoint():
+    r = client.get(
+        "/api/v1/literature",
+        params={"q": "Saffire exploration atmosphere 34% O2", "limit": 4},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["total"] >= 30
+    assert len(body["items"]) == 4
+    assert any("PSI" in item["doc_id"] or "LIT" in item["doc_id"] for item in body["items"])

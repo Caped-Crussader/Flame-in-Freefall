@@ -14,6 +14,10 @@ import joblib
 import pandas as pd
 
 from flame.config import Settings, get_settings
+from flame.retrieval.literature import (
+    LITERATURE_INDEX_FILE,
+    build_literature_index,
+)
 from flame.retrieval.semantic import (
     LOCAL_INDEX_FILE,
     METADATA_FILE,
@@ -61,12 +65,20 @@ def build_semantic_index(
     )
     joblib.dump(index_data, idx_path)
 
+    lit_idx_path = qdrant_dir / LITERATURE_INDEX_FILE
+    lit_data = build_literature_index(
+        model_name=cfg.embedding_model,
+        allow_download=False,
+    )
+    joblib.dump(lit_data, lit_idx_path)
+
     meta = {
         "parquet_sha256": parquet_sha256,
         "embedding_model": cfg.embedding_model,
         "dense_backend": index_data.get("dense_backend", "tfidf-svd"),
         "sparse_model": cfg.sparse_model,
         "total_indexed": len(df),
+        "literature_indexed": lit_data.get("n_docs", 0),
     }
     with open(meta_path, "w", encoding="utf-8") as f:
         json.dump(meta, f, indent=2)

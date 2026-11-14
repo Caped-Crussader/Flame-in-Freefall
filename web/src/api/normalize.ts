@@ -5,6 +5,7 @@ import {
   type AskResult,
   type Citation,
   type EvidenceRow,
+  type LiteraturePassage,
   type Meta,
   type Plan,
   type Status,
@@ -56,6 +57,27 @@ function normalizeCitation(v: unknown): Citation | null {
     source_url: str(v.source_url),
     investigation_id: str(v.investigation_id),
     dataset_family: str(v.dataset_family),
+  };
+}
+
+function normalizeLiterature(v: unknown): LiteraturePassage | null {
+  if (!isObj(v)) return null;
+  const docId = str(v.doc_id);
+  if (!docId) return null;
+  return {
+    doc_id: docId,
+    source_type: str(v.source_type) ?? 'NASA_LITERATURE',
+    title: str(v.title) ?? docId,
+    accession: str(v.accession),
+    acronym: str(v.acronym),
+    doi: str(v.doi),
+    url: str(v.url),
+    authors: strList(v.authors),
+    platform: str(v.platform),
+    hardware: str(v.hardware),
+    related_families: strList(v.related_families),
+    snippet: str(v.snippet) ?? '',
+    score: num(v.score) ?? 0,
   };
 }
 
@@ -111,6 +133,9 @@ export function normalizeAsk(json: unknown, requestId: string | null = null): As
   const citations = (Array.isArray(json.citations) ? json.citations : [])
     .map(normalizeCitation)
     .filter((c): c is Citation => c !== null);
+  const literature = (Array.isArray(json.literature) ? json.literature : [])
+    .map(normalizeLiterature)
+    .filter((l): l is LiteraturePassage => l !== null);
   const aggregates = (Array.isArray(json.aggregates) ? json.aggregates : []).filter(isObj);
   const plan = normalizePlan(json.plan);
   return {
@@ -119,6 +144,7 @@ export function normalizeAsk(json: unknown, requestId: string | null = null): As
     answer: str(json.answer_markdown) ?? '',
     evidence,
     citations,
+    ...(literature.length > 0 ? { literature } : {}),
     aggregates,
     exclusions: collectExclusions(aggregates),
     plan,

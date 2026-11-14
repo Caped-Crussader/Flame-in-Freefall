@@ -3,5 +3,6 @@
   "embedding_model": "BAAI/bge-small-en-v1.5",
   "dense_backend": "sentence-transformers (BAAI/bge-small-en-v1.5)",
   "sparse_model": "Qdrant/bm25",
-  "total_indexed": 892
+  "total_indexed": 892,
+  "literature_indexed": 31
 }

@@ -1,13 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
 import {
+  generateSafetyDossier,
   simulateRisk,
   type FlammabilityEnvelope,
+  type MissionSafetyDossier,
   type RiskSimulationResult,
 } from '../api/client';
 
 const POPULAR_MATERIALS = [
   'SIBAL (Cotton-Fiberglass Blend)',
   'PMMA (Acrylic)',
+  'Overheated Kapton-Insulated Wire',
+  'Overheated PTFE-Insulated Wire (AWG 20)',
+  'Overheated Silicone Rubber Cable',
   'Nomex (Aramid)',
   'Velcro Hook-and-Loop (Nylon)',
   'Cotton Fabric',
@@ -400,6 +405,9 @@ export function Simulator() {
   const [airflow, setAirflow] = useState<number>(10.0);
   const [material, setMaterial] = useState<string>(POPULAR_MATERIALS[0]);
   const [res, setRes] = useState<RiskSimulationResult | null>(null);
+  const [dossier, setDossier] = useState<MissionSafetyDossier | null>(null);
+  const [dossierLoading, setDossierLoading] = useState<boolean>(false);
+  const [copiedMd, setCopiedMd] = useState<boolean>(false);
 
   useEffect(() => {
     const ctl = new AbortController();
@@ -421,6 +429,73 @@ export function Simulator() {
     setOxygen(o2);
     setPressure(kpa);
     setAirflow(flow);
+  };
+
+  const fetchDossier = async (): Promise<MissionSafetyDossier | null> => {
+    setDossierLoading(true);
+    try {
+      const d = await generateSafetyDossier({
+        oxygen_pct: oxygen,
+        pressure_kpa: pressure,
+        airflow_velocity_cms: airflow,
+        fuel_material: material,
+      });
+      setDossier(d);
+      return d;
+    } catch {
+      return null;
+    } finally {
+      setDossierLoading(false);
+    }
+  };
+
+  const handleDownloadMarkdown = async () => {
+    const d = await fetchDossier();
+    if (!d) return;
+    const blob = new Blob([d.markdown_report], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${d.dossier_id}.md`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handlePrintPdfDossier = async () => {
+    const d = await fetchDossier();
+    if (!d) return;
+    const win = window.open('', '_blank');
+    if (win) {
+      win.document.open();
+      win.document.write(d.html_printable);
+      win.document.close();
+      win.focus();
+    } else {
+      // Fallback: download self-contained printable HTML certificate
+      const blob = new Blob([d.html_printable], { type: 'text/html;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${d.dossier_id}.html`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+  };
+
+  const handleCopyMarkdown = async () => {
+    const d = dossier ?? (await fetchDossier());
+    if (!d) return;
+    try {
+      await navigator.clipboard.writeText(d.markdown_report);
+      setCopiedMd(true);
+      window.setTimeout(() => setCopiedMd(false), 2500);
+    } catch {
+      /* ignore clipboard error */
+    }
   };
 
   return (
@@ -533,26 +608,163 @@ export function Simulator() {
 
       {res && (
         <>
-          <div className="nx-stats" style={{ marginBottom: 20 }}>
+          <div className="nx-stats" style={{ marginBottom: 16 }}>
             <div className={'nx-stat ' + (res.risk_level === 'CRITICAL' || res.risk_level === 'HIGH' ? 'red' : '')}>
               <b>
                 {res.risk_level} ({res.risk_score.toFixed(2)})
               </b>
-              <span>Flammability Risk Level (0–1.0)</span>
+              <span>
+                Flammability Risk Level
+                {res.uncertainty
+                  ? ` · Confidence: ${res.uncertainty.confidence_level} (${(res.uncertainty.confidence_score * 100).toFixed(0)}%)`
+                  : ' (0–1.0)'}
+              </span>
             </div>
             <div className="nx-stat">
-              <b>{(res.sustained_burn_probability * 100).toFixed(1)}%</b>
-              <span>Sustained Burn Probability (ML)</span>
+              <b>
+                {(res.sustained_burn_probability * 100).toFixed(1)}%
+                {res.uncertainty ? ` ± ${(res.uncertainty.sustained_prob_std * 100).toFixed(1)}%` : ''}
+              </b>
+              <span>Sustained Burn Probability (Ensemble ±1σ)</span>
             </div>
             <div className="nx-stat">
               <b>{res.predicted_burning_rate_mms.toFixed(2)} mm/s</b>
-              <span>Predicted Burn / Spread Rate</span>
+              <span>
+                Predicted Burn Rate
+                {res.uncertainty
+                  ? ` (90% CI: ${res.uncertainty.burning_rate_ci90_mms[0].toFixed(2)}–${res.uncertainty.burning_rate_ci90_mms[1].toFixed(2)})`
+                  : ''}
+              </span>
             </div>
             <div className="nx-stat">
               <b>{res.predicted_flame_temp_k.toFixed(0)} K</b>
-              <span>Predicted Flame Temperature</span>
+              <span>
+                Predicted Flame Temp
+                {res.uncertainty
+                  ? ` (90% CI: ${res.uncertainty.flame_temp_ci90_k[0].toFixed(0)}–${res.uncertainty.flame_temp_ci90_k[1].toFixed(0)} K)`
+                  : ''}
+              </span>
             </div>
           </div>
+
+          {res.physics_diagnostics && (
+            <section className="nx-card" style={{ marginBottom: 20, padding: '16px 18px' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: 8,
+                  marginBottom: 12,
+                }}
+              >
+                <h3 style={{ margin: 0, fontSize: 16 }}>
+                  ⚛️ Physics-Informed Nondimensional Diagnostics (7-Feature Coupled Engine)
+                </h3>
+                <span className="tag mono" style={{ color: '#38bdf8' }}>
+                  {res.physics_diagnostics.transport_regime} · Pe={res.physics_diagnostics.peclet_transport_factor.toFixed(2)}
+                </span>
+              </div>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                  gap: 12,
+                }}
+              >
+                <div
+                  style={{
+                    padding: '10px 12px',
+                    borderRadius: 10,
+                    background: 'rgba(15, 23, 42, 0.65)',
+                    border: '1px solid rgba(56, 189, 248, 0.2)',
+                  }}
+                >
+                  <div className="k" style={{ fontSize: 11 }}>
+                    O₂ Partial Pressure (P_O₂)
+                  </div>
+                  <div className="mono" style={{ fontSize: 18, fontWeight: 700, color: '#f8fafc', marginTop: 2 }}>
+                    {res.physics_diagnostics.oxygen_partial_pressure_kpa.toFixed(2)} kPa
+                  </div>
+                  <div className="k" style={{ fontSize: 11 }}>
+                    {res.physics_diagnostics.normoxic_po2_ratio.toFixed(2)}× Earth Normoxic (21.27 kPa)
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    padding: '10px 12px',
+                    borderRadius: 10,
+                    background: 'rgba(15, 23, 42, 0.65)',
+                    border: '1px solid rgba(56, 189, 248, 0.2)',
+                  }}
+                >
+                  <div className="k" style={{ fontSize: 11 }}>
+                    Inert Diluent Heat-Sink (N₂/O₂)
+                  </div>
+                  <div className="mono" style={{ fontSize: 18, fontWeight: 700, color: '#f8fafc', marginTop: 2 }}>
+                    {res.physics_diagnostics.diluent_to_o2_ratio.toFixed(2)} : 1
+                  </div>
+                  <div className="k" style={{ fontSize: 11 }}>
+                    Earth Air Baseline: 3.76 : 1
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    padding: '10px 12px',
+                    borderRadius: 10,
+                    background: 'rgba(15, 23, 42, 0.65)',
+                    border: '1px solid rgba(56, 189, 248, 0.2)',
+                  }}
+                >
+                  <div className="k" style={{ fontSize: 11 }}>
+                    0g MOC Limit vs. 1g STD-6001
+                  </div>
+                  <div className="mono" style={{ fontSize: 18, fontWeight: 700, color: '#38bdf8', marginTop: 2 }}>
+                    {res.physics_diagnostics.moc_0g_limit_o2_pct.toFixed(1)}% vs.{' '}
+                    <span style={{ color: '#4ade80' }}>
+                      {res.physics_diagnostics.moc_1g_std6001_limit_o2_pct.toFixed(1)}%
+                    </span>
+                  </div>
+                  <div className="k" style={{ fontSize: 11 }}>
+                    0g ignites {(res.physics_diagnostics.moc_1g_std6001_limit_o2_pct - res.physics_diagnostics.moc_0g_limit_o2_pct).toFixed(1)}% O₂ lower than 1g
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    padding: '10px 12px',
+                    borderRadius: 10,
+                    background: 'rgba(15, 23, 42, 0.65)',
+                    border: '1px solid rgba(56, 189, 248, 0.2)',
+                  }}
+                >
+                  <div className="k" style={{ fontSize: 11 }}>
+                    0g MOC Safety Margin
+                  </div>
+                  <div
+                    className="mono"
+                    style={{
+                      fontSize: 18,
+                      fontWeight: 700,
+                      color: res.physics_diagnostics.moc_safety_margin_o2_pct >= 0 ? '#4ade80' : '#f87171',
+                      marginTop: 2,
+                    }}
+                  >
+                    {res.physics_diagnostics.moc_safety_margin_o2_pct >= 0 ? '+' : ''}
+                    {res.physics_diagnostics.moc_safety_margin_o2_pct.toFixed(1)}% O₂
+                  </div>
+                  <div className="k" style={{ fontSize: 11 }}>
+                    {res.physics_diagnostics.moc_safety_margin_o2_pct >= 0
+                      ? 'Below 0g self-sustained limit'
+                      : 'Exceeds 0g MOC flammability boundary'}
+                  </div>
+                </div>
+              </div>
+            </section>
+          )}
 
           <section className="nx-card" style={{ marginBottom: 22 }}>
             <h3>🗺️ Interactive 2D Flammability Envelope & MOC Boundary Curves</h3>
@@ -612,7 +824,289 @@ export function Simulator() {
             </article>
           </div>
 
-          <section className="nx-card">
+          {res.detection_suppression && (
+            <section className="nx-card" style={{ marginBottom: 22 }}>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: 10,
+                  marginBottom: 14,
+                }}
+              >
+                <div>
+                  <p className="nx-eyebrow" style={{ margin: 0 }}>
+                    SAME · SAME-R · DAFT / DAFT-2 · SLICE · SAFFIRE IV–VI · MGM
+                  </p>
+                  <h3 style={{ margin: '4px 0 0', fontSize: 19 }}>
+                    🚨 Spacecraft Fire Detection, Suppression & Post-Fire Cleanup Advisor
+                  </h3>
+                </div>
+                <span
+                  className="tag mono"
+                  style={{
+                    color:
+                      res.detection_suppression.estimated_peak_co_ppm >= 55
+                        ? '#f87171'
+                        : '#4ade80',
+                  }}
+                >
+                  Peak CO: {res.detection_suppression.estimated_peak_co_ppm.toFixed(0)} ppm ·{' '}
+                  {res.detection_suppression.co_toxicity_level}
+                </span>
+              </div>
+
+              {/* 1. Smoke Detector Modality & Aerosol Physics */}
+              <div
+                className="nx-grid"
+                style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16, marginBottom: 18 }}
+              >
+                <div
+                  style={{
+                    padding: 16,
+                    borderRadius: 12,
+                    background: 'rgba(15, 23, 42, 0.72)',
+                    border: '1px solid rgba(56, 189, 248, 0.25)',
+                  }}
+                >
+                  <div className="k" style={{ fontSize: 11, textTransform: 'uppercase' }}>
+                    Optimal Smoke Detector Modality (SAME / SAME-R)
+                  </div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: '#38bdf8', marginTop: 4 }}>
+                    {res.detection_suppression.recommended_detector_modality}
+                  </div>
+                  <p className="k" style={{ marginTop: 8, lineHeight: 1.5, color: '#cbd5e1' }}>
+                    {res.detection_suppression.detector_rationale}
+                  </p>
+
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(3, 1fr)',
+                      gap: 8,
+                      marginTop: 12,
+                      paddingTop: 10,
+                      borderTop: '1px solid rgba(255,255,255,0.08)',
+                    }}
+                  >
+                    <div>
+                      <div className="k" style={{ fontSize: 11 }}>
+                        0g Smoke CMD
+                      </div>
+                      <div className="mono" style={{ fontSize: 16, fontWeight: 700, color: '#f8fafc' }}>
+                        {res.detection_suppression.smoke_cmd_0g_um.toFixed(2)} μm
+                      </div>
+                      <div className="k" style={{ fontSize: 10 }}>
+                        vs. {res.detection_suppression.smoke_cmd_1g_um.toFixed(2)} μm in 1g
+                      </div>
+                    </div>
+                    <div>
+                      <div className="k" style={{ fontSize: 11 }}>
+                        Laser Photoelectric
+                      </div>
+                      <div className="mono" style={{ fontSize: 16, fontWeight: 700, color: '#4ade80' }}>
+                        {(res.detection_suppression.photoelectric_sensitivity * 100).toFixed(0)}%
+                      </div>
+                      <div className="k" style={{ fontSize: 10 }}>
+                        0g Mie scattering
+                      </div>
+                    </div>
+                    <div>
+                      <div className="k" style={{ fontSize: 11 }}>
+                        Ionization (Am-241)
+                      </div>
+                      <div className="mono" style={{ fontSize: 16, fontWeight: 700, color: '#fbbf24' }}>
+                        {(res.detection_suppression.ionization_sensitivity * 100).toFixed(0)}%
+                      </div>
+                      <div className="k" style={{ fontSize: 10 }}>
+                        Alarm ~{res.detection_suppression.estimated_alarm_time_s.toFixed(0)}s
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Lunar Dust Discrimination & CO Toxicity Warning */}
+                <div
+                  style={{
+                    padding: 16,
+                    borderRadius: 12,
+                    background: 'rgba(15, 23, 42, 0.72)',
+                    border: '1px solid rgba(251, 146, 60, 0.28)',
+                  }}
+                >
+                  <div className="k" style={{ fontSize: 11, textTransform: 'uppercase' }}>
+                    CO Toxicity & Lunar Regolith False-Alarm Mitigation (DAFT / MGM / SAFFIRE)
+                  </div>
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'baseline',
+                      marginTop: 6,
+                    }}
+                  >
+                    <span className="mono" style={{ fontSize: 18, fontWeight: 800, color: '#fb923c' }}>
+                      Est. Peak CO: {res.detection_suppression.estimated_peak_co_ppm.toFixed(1)} ppm
+                    </span>
+                    <span className="k mono" style={{ fontSize: 11 }}>
+                      1-hr SMAC: {res.detection_suppression.nasa_smac_1hr_co_ppm} ppm · 24-hr:{' '}
+                      {res.detection_suppression.nasa_smac_24hr_co_ppm} ppm
+                    </span>
+                  </div>
+                  <div style={{ marginTop: 8 }}>
+                    <div className="k" style={{ fontSize: 11, fontWeight: 600, color: '#f8fafc' }}>
+                      Toxic Pyrolysis Byproducts to Monitor:
+                    </div>
+                    <ul style={{ margin: '4px 0 8px', paddingLeft: 18, fontSize: 12.5, color: '#cbd5e1' }}>
+                      {res.detection_suppression.secondary_toxic_byproducts.map((gas) => (
+                        <li key={gas}>{gas}</li>
+                      ))}
+                    </ul>
+                  </div>
+                  <p
+                    className="k"
+                    style={{
+                      margin: 0,
+                      paddingTop: 8,
+                      borderTop: '1px solid rgba(255,255,255,0.08)',
+                      fontSize: 12,
+                      lineHeight: 1.45,
+                      color: '#94a3b8',
+                    }}
+                  >
+                    🌕 {res.detection_suppression.lunar_dust_discrimination_note}
+                  </p>
+                </div>
+              </div>
+
+              {/* 2. Extinguishant Selection Matrix (SLICE-001..008) */}
+              <div style={{ marginBottom: 18 }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    flexWrap: 'wrap',
+                    gap: 8,
+                    marginBottom: 10,
+                  }}
+                >
+                  <h4 style={{ margin: 0, fontSize: 15 }}>
+                    🧯 Spacecraft Fire Suppressant Comparison (SLICE-001..008 & ISS/Orion PFE)
+                  </h4>
+                  <span className="k mono" style={{ fontSize: 12, color: '#38bdf8' }}>
+                    Primary: {res.detection_suppression.primary_extinguishant}
+                  </span>
+                </div>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+                    gap: 12,
+                  }}
+                >
+                  {res.detection_suppression.extinguishant_options.map((opt) => (
+                    <div
+                      key={opt.agent_name}
+                      style={{
+                        padding: 12,
+                        borderRadius: 10,
+                        background: 'rgba(11, 16, 38, 0.78)',
+                        border:
+                          opt.suitability === 'OPTIMAL'
+                            ? '1px solid rgba(74, 222, 128, 0.45)'
+                            : '1px solid rgba(255, 255, 255, 0.09)',
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6 }}>
+                        <span
+                          className="tag mono"
+                          style={{
+                            color:
+                              opt.suitability === 'OPTIMAL'
+                                ? '#4ade80'
+                                : opt.suitability === 'RECOMMENDED'
+                                  ? '#38bdf8'
+                                  : '#fb923c',
+                          }}
+                        >
+                          {opt.suitability}
+                        </span>
+                        <span className="mono" style={{ fontSize: 13, fontWeight: 700 }}>
+                          {opt.effectiveness_pct.toFixed(0)}% Eff.
+                        </span>
+                      </div>
+                      <div style={{ fontWeight: 700, fontSize: 13.5, marginTop: 6, color: '#f8fafc' }}>
+                        {opt.agent_name}
+                      </div>
+                      <p className="k" style={{ fontSize: 12, marginTop: 6, lineHeight: 1.45, color: '#cbd5e1' }}>
+                        {opt.mechanism_and_tradeoff}
+                      </p>
+                      <div className="k mono" style={{ fontSize: 11, marginTop: 6, color: '#94a3b8' }}>
+                        Citations: {opt.cited_experiments.join(', ')}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* 3. Post-Fire Cleanup & Scrubbing Protocol (SAFFIRE VI) */}
+              <div
+                style={{
+                  padding: 14,
+                  borderRadius: 10,
+                  background: 'rgba(15, 23, 42, 0.65)',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  marginBottom: 16,
+                }}
+              >
+                <h4 style={{ margin: '0 0 8px', fontSize: 14.5 }}>
+                  ♻️ Post-Fire Cabin Scrubbing & ECLSS Recovery Protocol (SAFFIRE-VI S6-1 / S6-2)
+                </h4>
+                <ul style={{ margin: 0, paddingLeft: 18, color: '#cbd5e1', fontSize: 12.5, lineHeight: 1.55 }}>
+                  {res.detection_suppression.post_fire_cleanup_steps.map((step) => (
+                    <li key={step} style={{ marginBottom: 4 }}>
+                      {step}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              {/* 4. Grounded SAME / DAFT / SLICE / SAFFIRE Evidence Rows */}
+              {res.detection_suppression.evidence_experiments.length > 0 && (
+                <div className="wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Experiment ID</th>
+                        <th>Family</th>
+                        <th>Material / Aerosol Test</th>
+                        <th>CO (ppm)</th>
+                        <th>Outcome</th>
+                        <th>Detection / Suppression Insight</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {res.detection_suppression.evidence_experiments.map((ev) => (
+                        <tr key={ev.experiment_id}>
+                          <td className="mono">{ev.experiment_id}</td>
+                          <td>{ev.dataset_family}</td>
+                          <td>{ev.fuel_material}</td>
+                          <td className="mono">{ev.co_ppm ?? '—'}</td>
+                          <td>{ev.extinction_outcome}</td>
+                          <td style={{ fontSize: 12, color: '#cbd5e1' }}>{ev.key_insight}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+          )}
+
+          <section className="nx-card" style={{ marginBottom: 22 }}>
             <h3>🔬 5 Closest Historical NASA/JAXA Experiments in (O₂, Pressure, Airflow, Material) Space</h3>
             <div className="wrap" style={{ marginTop: 12 }}>
               <table>
@@ -650,6 +1144,126 @@ export function Simulator() {
                 </tbody>
               </table>
             </div>
+          </section>
+
+          <section className="nx-card">
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: 12,
+                marginBottom: dossier ? 16 : 0,
+              }}
+            >
+              <div>
+                <p className="nx-eyebrow" style={{ margin: 0 }}>
+                  NASA-STD-6001 & Microgravity Certification Deliverable
+                </p>
+                <h3 style={{ margin: '4px 0 0', fontSize: 19 }}>
+                  📜 Exportable Mission Fire-Safety Dossier (PDF Certificate & Markdown Report)
+                </h3>
+                <p className="k" style={{ margin: '4px 0 0' }}>
+                  Compile all coupled physics diagnostics, 90% ensemble prediction intervals, 2D MOC curve, SAME/SLICE
+                  detection &amp; suppression specs, and cited NASA experiment IDs into an auditable engineering dossier.
+                </p>
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+                <button
+                  type="button"
+                  className="nx-btn"
+                  disabled={dossierLoading}
+                  onClick={() => void handlePrintPdfDossier()}
+                  style={{ cursor: 'pointer', padding: '9px 16px', fontSize: 13 }}
+                >
+                  🖨️ Export / Print PDF Certificate
+                </button>
+                <button
+                  type="button"
+                  className="nx-btn ghost"
+                  disabled={dossierLoading}
+                  onClick={() => void handleDownloadMarkdown()}
+                  style={{ cursor: 'pointer', padding: '9px 16px', fontSize: 13 }}
+                >
+                  📥 Download Markdown (.md)
+                </button>
+                <button
+                  type="button"
+                  className="nx-btn ghost"
+                  disabled={dossierLoading}
+                  onClick={() => void fetchDossier()}
+                  style={{ cursor: 'pointer', padding: '9px 16px', fontSize: 13 }}
+                >
+                  {dossierLoading ? 'Compiling…' : '👁️ Preview Dossier'}
+                </button>
+              </div>
+            </div>
+
+            {dossier && (
+              <div
+                style={{
+                  padding: 16,
+                  borderRadius: 12,
+                  background: 'rgba(11, 16, 38, 0.85)',
+                  border: '1px solid rgba(56, 189, 248, 0.3)',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    flexWrap: 'wrap',
+                    gap: 8,
+                    marginBottom: 10,
+                  }}
+                >
+                  <div>
+                    <span className="tag mono" style={{ color: '#38bdf8', marginRight: 8 }}>
+                      {dossier.dossier_id}
+                    </span>
+                    <span
+                      className="tag mono"
+                      style={{
+                        color: dossier.certification_status.startsWith('PASS')
+                          ? '#4ade80'
+                          : dossier.certification_status.startsWith('CONDITIONAL')
+                            ? '#fbbf24'
+                            : '#f87171',
+                      }}
+                    >
+                      {dossier.certification_status}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    className="sug"
+                    onClick={() => void handleCopyMarkdown()}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    {copiedMd ? '✓ Copied Markdown' : '📋 Copy Markdown to Clipboard'}
+                  </button>
+                </div>
+                <pre
+                  style={{
+                    margin: 0,
+                    padding: 14,
+                    borderRadius: 8,
+                    background: 'rgba(2, 6, 23, 0.9)',
+                    border: '1px solid rgba(255,255,255,0.08)',
+                    color: '#e2e8f0',
+                    fontSize: 12,
+                    lineHeight: 1.5,
+                    maxHeight: 380,
+                    overflow: 'auto',
+                    whiteSpace: 'pre-wrap',
+                  }}
+                >
+                  {dossier.markdown_report}
+                </pre>
+              </div>
+            )}
           </section>
         </>
       )}
