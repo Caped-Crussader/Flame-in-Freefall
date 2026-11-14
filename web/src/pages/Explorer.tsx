@@ -78,8 +78,7 @@ export function Explorer({ meta }: { meta: Meta | null }) {
                 width: '100%',
                 padding: '10px 12px',
                 borderRadius: 10,
-                background: 'rgba(11, 16, 38, 0.85)',
-                border: '1px solid rgba(106, 168, 255, 0.3)',
+                border: '1px solid rgba(56, 189, 248, 0.3)',
               }}
             >
               {families.map((f) => (

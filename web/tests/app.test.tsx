@@ -232,5 +232,14 @@ describe('Simulator (Priority 2 & Priority 3 UI Verification)', () => {
     expect(screen.getByText(/Est\. Peak CO: 182\.6 ppm/)).toBeTruthy();
     expect(screen.getByText(/SAME-AERO-001/)).toBeTruthy();
     expect(screen.getByText(/Exportable Mission Fire-Safety Dossier/)).toBeTruthy();
+
+    const matSelect = screen.getByLabelText(/Fuel \/ Specimen Material/) as HTMLSelectElement;
+    fireEvent.change(matSelect, { target: { value: 'Overheated Kapton-Insulated Wire' } });
+    expect(matSelect.value).toBe('Overheated Kapton-Insulated Wire');
+    await waitFor(() => {
+      const fetchMock = globalThis.fetch as unknown as ReturnType<typeof vi.fn>;
+      const lastCall = fetchMock.mock.calls[fetchMock.mock.calls.length - 1];
+      expect(JSON.parse(String(lastCall[1]?.body)).fuel_material).toBe('Overheated Kapton-Insulated Wire');
+    });
   });
 });

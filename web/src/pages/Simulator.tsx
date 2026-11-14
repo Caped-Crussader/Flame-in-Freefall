@@ -15,12 +15,12 @@ const POPULAR_MATERIALS = [
   'Overheated Silicone Rubber Cable',
   'Nomex (Aramid)',
   'Velcro Hook-and-Loop (Nylon)',
-  'Cotton Fabric',
-  'Polyurethane Foam (Open-Cell)',
+  'Cotton Textile Blend',
+  'Flexible Polyurethane Foam (Open-Cell)',
   'Methanol',
   'n-Heptane',
-  'Ethanol',
-  'Cellulose Tissue / Kimwipe',
+  'Ethanol (Pure)',
+  'Cellulose Filter Paper Stack',
 ];
 
 function riskToRgba(score: number): string {
@@ -602,8 +602,8 @@ export function Simulator() {
                 width: '100%',
                 padding: '9px 12px',
                 borderRadius: 10,
-                background: 'rgba(11, 16, 38, 0.9)',
-                border: '1px solid rgba(106, 168, 255, 0.35)',
+                border: '1px solid rgba(56, 189, 248, 0.35)',
+                fontSize: 14,
               }}
             >
               {POPULAR_MATERIALS.map((m) => (
