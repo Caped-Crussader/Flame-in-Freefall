@@ -1,6 +1,7 @@
 .venv/
 __pycache__/
 *.pyc
+*.egg-info/
 .env
 .pytest_cache/
 data/raw/*
@@ -11,5 +12,8 @@ data/*.db
 backend/app/ml/artifacts/
 .ipynb_checkpoints/
 example_project/
+node_modules/
+.vite/
+.vitest-cache/
 
 certs/ca-bundle.pem
