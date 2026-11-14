@@ -2,7 +2,8 @@
 **SI-Powered Fire Safety Insights from NASA/JAXA Microgravity Combustion Data**  
 *2026 NASA Space Apps Challenge*
 
-<img width="2185" height="1355" alt="Screenshot From 2026-11-14 15-57-31" src="https://github.com/user-attachments/assets/d49a69a8-1929-4cc7-afd5-c8ff3693bb4d" />
+<img width="2181" height="1347" alt="Screenshot From 2026-11-14 17-57-42" src="https://github.com/user-attachments/assets/d985c158-aec4-44c6-afd6-f8188abb3c77" />
+
 
 An interactive **React 19 + TypeScript + Vite** decision-support application (with a companion **Streamlit** dashboard) and **grounded Hybrid RAG + SQL engine** that unifies decades of NASA and JAXA microgravity combustion experiments (**892 experiments × 44 columns** across **30 dataset families** and **35 investigations**) to deliver deterministic, citation-verified fire-safety insights for ISS, Artemis lunar habitats, and Mars transit missions.
 
