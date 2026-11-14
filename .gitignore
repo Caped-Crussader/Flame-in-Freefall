@@ -10,3 +10,6 @@ data/vectorstore/*
 data/*.db
 backend/app/ml/artifacts/
 .ipynb_checkpoints/
+example_project/
+
+certs/ca-bundle.pem
