@@ -169,6 +169,7 @@ Run the full Python backend test suite (**174 passed**), the React frontend test
 PYTHONPATH=src:. .venv/bin/pytest -q tests/
 npm test --prefix web
 PYTHONPATH=src:. .venv/bin/python evaluation/run_eval.py
+PYTHONPATH=src:. .venv/bin/uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload;
 ```
 
 ---
