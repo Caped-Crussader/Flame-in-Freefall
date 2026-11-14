@@ -1,0 +1,27 @@
+# Backend
+fastapi
+uvicorn[standard]
+pydantic-settings
+sqlalchemy
+python-dotenv
+
+# Data / ML
+pandas
+numpy
+scikit-learn
+joblib
+pypdf
+
+# RAG / LLM
+sentence-transformers
+chromadb
+ollama
+
+# Frontend
+streamlit
+plotly
+requests
+
+# Dev
+pytest
+httpx
