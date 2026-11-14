@@ -9,10 +9,15 @@ Executes compiled plans against a DuckDB connection cursor, strictly enforcing:
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
-import duckdb
 from pydantic import BaseModel, ConfigDict, Field
+
+try:
+    import duckdb
+except ImportError:
+    duckdb = None  # type: ignore[assignment]
 
 from flame.retrieval.compiler import CompiledPlan, compile_plan
 from flame.schemas.query_plan import AggregateFunction, PlanIntent, QueryPlan
@@ -89,8 +94,16 @@ def execute_compiled_plan(
             flags = row_dict.get("data_quality_flags")
             if flags is None:
                 row_dict["data_quality_flags"] = []
+            elif isinstance(flags, str):
+                try:
+                    parsed = json.loads(flags)
+                    row_dict["data_quality_flags"] = list(parsed) if isinstance(parsed, list) else []
+                except Exception:
+                    row_dict["data_quality_flags"] = []
             elif isinstance(flags, (list, tuple)):
                 row_dict["data_quality_flags"] = list(flags)
+            elif hasattr(flags, "tolist"):
+                row_dict["data_quality_flags"] = list(flags.tolist())
 
             # Ensure is_modeled is an explicit boolean
             row_dict["is_modeled"] = bool(row_dict.get("is_modeled", False))

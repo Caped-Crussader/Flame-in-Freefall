@@ -8,8 +8,12 @@ from __future__ import annotations
 
 from typing import Any
 
-import duckdb
 from pydantic import BaseModel, ConfigDict, Field
+
+try:
+    import duckdb
+except ImportError:
+    duckdb = None  # type: ignore[assignment]
 
 from flame.schemas.experiment import (
     CANONICAL_COLUMNS,

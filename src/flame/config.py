@@ -81,8 +81,10 @@ class Settings(BaseSettings):
     cors_origins: list[str] = [
         "http://localhost:3000",
         "http://localhost:5173",
+        "http://localhost:8501",
         "http://127.0.0.1:3000",
         "http://127.0.0.1:5173",
+        "http://127.0.0.1:8501",
     ]
     rate_limit_per_minute: int = 60
     max_question_length: int = 1000

@@ -12,9 +12,16 @@ from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any, cast
 
+import re
 import pandas as pd
-import pandera.pandas as pa
-from pandera.errors import SchemaError, SchemaErrors
+
+try:
+    import pandera.pandas as pa
+    from pandera.errors import SchemaError, SchemaErrors
+except ImportError:
+    pa = None  # type: ignore[assignment]
+    SchemaError = Exception  # type: ignore[misc,assignment]
+    SchemaErrors = Exception  # type: ignore[misc,assignment]
 
 from flame.ingestion.clean import _append_flag
 from flame.ingestion.errors import DataValidationError, PipelineError
@@ -140,14 +147,32 @@ def validate_hard(frame: pd.DataFrame, *, context: str = "dataset") -> HardValid
             failures=[f"missing column {name!r}" for name in missing],
         )
 
-    schema = _build_hard_schema()
-    try:
-        schema.validate(frame, lazy=True)
-    except (SchemaErrors, SchemaError) as error:
-        failures = _format_schema_failures(frame, error)
-        raise DataValidationError(
-            f"{context}: hard validation failed", failures=failures
-        ) from error
+    if pa is not None:
+        schema = _build_hard_schema()
+        try:
+            schema.validate(frame, lazy=True)
+        except (SchemaErrors, SchemaError) as error:
+            failures = _format_schema_failures(frame, error)
+            raise DataValidationError(
+                f"{context}: hard validation failed", failures=failures
+            ) from error
+    else:
+        failures = []
+        for col in _REQUIRED_NON_NULL:
+            if col in frame.columns and frame[col].isna().any():
+                failures.append(f"column {col!r} contains null values")
+        if frame["experiment_id"].duplicated().any():
+            failures.append("experiment_id contains duplicates")
+        if "record_source" in frame.columns:
+            bad_rs = set(frame["record_source"].dropna()) - {"raw_rebuild", "canonical_legacy"}
+            if bad_rs:
+                failures.append(f"invalid record_source: {bad_rs}")
+        if "test_date" in frame.columns:
+            non_null_dates = frame["test_date"].dropna().astype(str)
+            if not non_null_dates.map(lambda s: bool(re.match(r"^\d{4}-\d{2}-\d{2}$", s))).all():
+                failures.append("test_date contains values not matching YYYY-MM-DD")
+        if failures:
+            raise DataValidationError(f"{context}: hard validation failed", failures=failures)
 
     return HardValidationSummary(rows=len(frame), columns=len(frame.columns))
 

@@ -3,18 +3,125 @@
 from __future__ import annotations
 
 import json
+import math
+import sqlite3
 from pathlib import Path
 from types import TracebackType
 from typing import Any
 
-import duckdb
+import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field
+
+try:
+    import duckdb
+except ImportError:
+    duckdb = None  # type: ignore[assignment]
 
 from flame.config import Settings, get_settings
 from flame.retrieval.catalog import FieldCatalog, build_field_catalog
 from flame.retrieval.errors import ExecutionError
 from flame.retrieval.structured import RetrievalResult, execute_plan
 from flame.schemas.query_plan import QueryPlan
+
+
+def _median_list(values: list[float]) -> float | None:
+    if not values:
+        return None
+    s = sorted(values)
+    n = len(s)
+    mid = n // 2
+    if n % 2 == 1:
+        return float(s[mid])
+    return float((s[mid - 1] + s[mid]) / 2.0)
+
+
+class _MedianAgg:
+    def __init__(self) -> None:
+        self.vals: list[float] = []
+
+    def step(self, value: Any) -> None:
+        if value is not None:
+            try:
+                f = float(value)
+                if not math.isnan(f):
+                    self.vals.append(f)
+            except (ValueError, TypeError):
+                pass
+
+    def finalize(self) -> float | None:
+        return _median_list(self.vals)
+
+
+class _SQLiteCompatConn:
+    """In-memory SQLite wrapper exposing the same execute/fetchall/cursor API as DuckDB."""
+
+    def __init__(self, parquet_path: Path, table_name: str = "experiments") -> None:
+        self._conn = sqlite3.connect(":memory:", check_same_thread=False)
+        self._conn.create_aggregate("MEDIAN", 1, _MedianAgg)
+        self._conn.create_function(
+            "list_contains",
+            2,
+            lambda flags_json, item: (
+                item in json.loads(flags_json)
+                if isinstance(flags_json, str) and flags_json.startswith("[")
+                else False
+            ),
+        )
+        df = pd.read_parquet(parquet_path)
+        df = df.copy()
+        if "data_quality_flags" in df.columns:
+            df["data_quality_flags"] = df["data_quality_flags"].apply(
+                lambda x: json.dumps(list(x)) if hasattr(x, "__iter__") and not isinstance(x, str) else "[]"
+            )
+        if "is_modeled" in df.columns:
+            df["is_modeled"] = df["is_modeled"].astype(int)
+        df.to_sql(table_name, self._conn, index=False, if_exists="replace")
+
+    def cursor(self) -> _SQLiteCompatCursor:
+        return _SQLiteCompatCursor(self._conn.cursor())
+
+    def close(self) -> None:
+        self._conn.close()
+
+
+class _SQLiteCompatCursor:
+    def __init__(self, cur: sqlite3.Cursor) -> None:
+        self._cur = cur
+
+    @staticmethod
+    def _rewrite_sql(sql: str, params: list[Any] | None = None) -> tuple[str, list[Any]]:
+        bound = list(params) if params is not None else []
+        # Rewrite DuckDB `WHERE experiment_id IN (SELECT unnest(?))`
+        if "SELECT unnest(?)" in sql and bound and isinstance(bound[0], (list, tuple)):
+            ids = list(bound[0])
+            placeholders = ", ".join("?" for _ in ids) if ids else "NULL"
+            sql = sql.replace("SELECT unnest(?)", placeholders)
+            bound = ids + bound[1:]
+        # Rewrite ILIKE -> LIKE (SQLite LIKE is case-insensitive for ASCII)
+        sql = sql.replace(" ILIKE ", " LIKE ")
+        # Rewrite is_modeled = FALSE / TRUE
+        sql = sql.replace("is_modeled = FALSE", "is_modeled = 0").replace(
+            "is_modeled = TRUE", "is_modeled = 1"
+        ).replace("is_modeled = true", "is_modeled = 1").replace("is_modeled = false", "is_modeled = 0")
+        return sql, bound
+
+    def execute(self, sql: str, params: list[Any] | None = None) -> _SQLiteCompatCursor:
+        rewritten, bound = self._rewrite_sql(sql, params)
+        self._cur.execute(rewritten, bound)
+        return self
+
+    def fetchall(self) -> list[tuple[Any, ...]]:
+        return self._cur.fetchall()
+
+    def fetchone(self) -> tuple[Any, ...] | None:
+        return self._cur.fetchone()
+
+    @property
+    def description(self) -> Any:
+        return self._cur.description
+
+    def close(self) -> None:
+        self._cur.close()
 
 
 class DatasetVersionInfo(BaseModel):
@@ -67,13 +174,16 @@ class ExperimentStore:
         if not self.parquet_path.is_file():
             raise FileNotFoundError(f"Parquet snapshot not found: {self.parquet_path}")
 
-        # Open one DuckDB connection in memory and create a read-only view over Parquet
-        self._conn = duckdb.connect(database=":memory:")
         self._table_name = "experiments"
-        parquet_posix = self.parquet_path.as_posix()
-        self._conn.execute(
-            f"CREATE VIEW {self._table_name} AS SELECT * FROM read_parquet('{parquet_posix}')"
-        )
+        if duckdb is not None:
+            # Open one DuckDB connection in memory and create a read-only view over Parquet
+            self._conn: Any = duckdb.connect(database=":memory:")
+            parquet_posix = self.parquet_path.as_posix()
+            self._conn.execute(
+                f"CREATE VIEW {self._table_name} AS SELECT * FROM read_parquet('{parquet_posix}')"
+            )
+        else:
+            self._conn = _SQLiteCompatConn(self.parquet_path, table_name=self._table_name)
 
         # Load dataset version information from the provenance manifest
         self._dataset_version = self._load_manifest_version()
@@ -148,8 +258,8 @@ class ExperimentStore:
                 cur.close()
         return self._catalog
 
-    def get_cursor(self) -> duckdb.DuckDBPyConnection:
-        """Create a fresh cursor from the underlying DuckDB connection."""
+    def get_cursor(self) -> Any:
+        """Create a fresh cursor from the underlying connection."""
         return self._conn.cursor()
 
     def execute_plan(self, plan: QueryPlan) -> RetrievalResult:
@@ -158,7 +268,8 @@ class ExperimentStore:
         try:
             return execute_plan(cur, plan, table_name=self._table_name)
         except Exception as err:
-            if isinstance(err, (duckdb.Error, RuntimeError)):
+            db_err = (duckdb.Error, RuntimeError) if duckdb is not None else (sqlite3.Error, RuntimeError)
+            if isinstance(err, db_err):
                 raise ExecutionError(f"Database execution failed: {err}") from err
             raise
         finally:

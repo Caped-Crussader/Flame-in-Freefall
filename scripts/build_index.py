@@ -1,7 +1,7 @@
-"""Idempotent semantic index builder for Flame in Freefall.
+"""Idempotent hybrid semantic + BM25 index builder for Flame in Freefall.
 
-Indexes all records in data/processed/experiments.parquet into Qdrant
-with dense and BM25 sparse vectors, saving snapshot version metadata.
+Indexes all records in data/processed/experiments.parquet into `data/interim/qdrant/`
+with dense SVD/TF-IDF and Okapi BM25 sparse vectors, saving snapshot version metadata.
 """
 
 from __future__ import annotations
@@ -10,12 +10,15 @@ import argparse
 import json
 import logging
 
+import joblib
 import pandas as pd
-from fastembed import SparseTextEmbedding, TextEmbedding
-from qdrant_client import QdrantClient, models
 
 from flame.config import Settings, get_settings
-from flame.retrieval.semantic import COLLECTION_NAME, METADATA_FILE, build_document_text
+from flame.retrieval.semantic import (
+    LOCAL_INDEX_FILE,
+    METADATA_FILE,
+    build_local_hybrid_index,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("flame.scripts.build_index")
@@ -33,6 +36,7 @@ def build_semantic_index(
     qdrant_dir = cfg.qdrant_path
     qdrant_dir.mkdir(parents=True, exist_ok=True)
     meta_path = qdrant_dir / METADATA_FILE
+    idx_path = qdrant_dir / LOCAL_INDEX_FILE
 
     # Load manifest to get parquet sha256
     parquet_sha256 = None
@@ -41,75 +45,35 @@ def build_semantic_index(
             manifest = json.load(f)
             parquet_sha256 = manifest.get("outputs", {}).get("parquet_sha256")
 
-    # Check if index is up to date
-    if not force_rebuild and meta_path.exists():
+    if not force_rebuild and meta_path.exists() and idx_path.exists():
         with open(meta_path, encoding="utf-8") as f:
             existing_meta = json.load(f)
         if existing_meta.get("parquet_sha256") == parquet_sha256:
             logger.info("Semantic index is already up to date with dataset version.")
             return
 
-    logger.info("Building semantic index from %s...", parquet_path)
+    logger.info("Building hybrid semantic + BM25 index from %s...", parquet_path)
     df = pd.read_parquet(parquet_path)
+    index_data = build_local_hybrid_index(df)
+    joblib.dump(index_data, idx_path)
 
-    dense_model = TextEmbedding(model_name=cfg.embedding_model)
-    sparse_model = SparseTextEmbedding(model_name=cfg.sparse_model)
-
-    docs = [build_document_text(row) for _, row in df.iterrows()]
-    logger.info("Embedding %d documents (dense + sparse)...", len(docs))
-
-    dense_embeddings = list(dense_model.embed(docs))
-    sparse_embeddings = list(sparse_model.embed(docs))
-
-    client = QdrantClient(path=str(qdrant_dir))
-    client.recreate_collection(
-        collection_name=COLLECTION_NAME,
-        vectors_config={"dense": models.VectorParams(size=384, distance=models.Distance.COSINE)},
-        sparse_vectors_config={"sparse": models.SparseVectorParams()},
-    )
-
-    points = []
-    for i, (_, row) in enumerate(df.iterrows()):
-        sp = sparse_embeddings[i]
-        points.append(
-            models.PointStruct(
-                id=i,
-                vector={
-                    "dense": dense_embeddings[i].tolist(),
-                    "sparse": models.SparseVector(
-                        indices=sp.indices.tolist(),
-                        values=sp.values.tolist(),
-                    ),
-                },
-                payload={
-                    "experiment_id": str(row["experiment_id"]),
-                    "dataset_family": str(row["dataset_family"]),
-                    "fuel_material": str(row["fuel_material"]),
-                    "is_modeled": bool(row["is_modeled"]),
-                    "text": docs[i],
-                },
-            )
-        )
-
-    # Batch upload points
-    client.upsert(collection_name=COLLECTION_NAME, points=points)
-    logger.info("Uploaded %d points to Qdrant collection '%s'.", len(points), COLLECTION_NAME)
-
-    # Write metadata
     meta = {
         "parquet_sha256": parquet_sha256,
-        "dense_model": cfg.embedding_model,
+        "embedding_model": cfg.embedding_model,
         "sparse_model": cfg.sparse_model,
-        "total_points": len(points),
+        "total_indexed": len(df),
     }
     with open(meta_path, "w", encoding="utf-8") as f:
         json.dump(meta, f, indent=2)
+    logger.info("Saved hybrid index (%d records) and metadata to %s", len(df), qdrant_dir)
 
-    logger.info("Index metadata successfully written to %s", meta_path)
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Build hybrid semantic + BM25 index.")
+    parser.add_argument("--force", action="store_true", help="Force rebuild even if up to date.")
+    args = parser.parse_args()
+    build_semantic_index(force_rebuild=args.force)
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Build Qdrant semantic index.")
-    parser.add_argument("--force", action="store_true", help="Force index rebuild.")
-    args = parser.parse_args()
-    build_semantic_index(force_rebuild=args.force)
+    main()

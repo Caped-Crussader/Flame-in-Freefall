@@ -90,7 +90,15 @@ def fuse_retrieval(
                 item = row_map[eid]
                 item["is_modeled"] = bool(item.get("is_modeled", False))
                 flags = item.get("data_quality_flags")
-                item["data_quality_flags"] = list(flags) if isinstance(flags, (list, tuple)) else []
+                if isinstance(flags, str) and flags.startswith("["):
+                    import json as _json
+                    item["data_quality_flags"] = list(_json.loads(flags))
+                elif isinstance(flags, (list, tuple)):
+                    item["data_quality_flags"] = list(flags)
+                elif hasattr(flags, "tolist"):
+                    item["data_quality_flags"] = list(flags.tolist())
+                else:
+                    item["data_quality_flags"] = []
                 ordered_rows.append(item)
     finally:
         cur.close()

@@ -1,19 +1,36 @@
-"""Row-level document builder and Qdrant semantic index integration.
+"""Row-level document builder and hybrid semantic + BM25 index integration.
 
-Builds structured textual representations of experiments and queries Qdrant
-with dense (BGE-small), sparse (BM25), or hybrid RRF fusion.
-Filters (including modeled-row exclusions) are strictly applied as payload filters.
+Supports:
+1. Qdrant + FastEmbed when installed.
+2. Pure local Hybrid RRF fallback (scikit-learn dense SVD/TF-IDF + Okapi BM25)
+   stored in `data/interim/qdrant/local_hybrid_index.joblib` + `semantic_meta.json`,
+   which runs 100% offline with zero network downloads.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import math
+import re
+from collections import Counter
 from typing import Any
 
+import joblib
+import numpy as np
 import pandas as pd
-from fastembed import SparseTextEmbedding, TextEmbedding
-from qdrant_client import QdrantClient, models
+from sklearn.decomposition import TruncatedSVD
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.preprocessing import normalize
+
+try:
+    from fastembed import SparseTextEmbedding, TextEmbedding
+    from qdrant_client import QdrantClient, models
+except ImportError:
+    SparseTextEmbedding = None  # type: ignore[assignment,misc]
+    TextEmbedding = None  # type: ignore[assignment,misc]
+    QdrantClient = None  # type: ignore[assignment,misc]
+    models = None  # type: ignore[assignment]
 
 from flame.config import Settings, get_settings
 from flame.schemas.query_plan import FilterOperator, QueryPlan
@@ -22,83 +39,147 @@ logger = logging.getLogger("flame.retrieval.semantic")
 
 COLLECTION_NAME = "experiments"
 METADATA_FILE = "semantic_meta.json"
+LOCAL_INDEX_FILE = "local_hybrid_index.joblib"
+
+_TOKEN_RE = re.compile(r"[a-z0-9]+(?:[-.][a-z0-9]+)*")
+
+
+def _tokenize(text: str) -> list[str]:
+    return _TOKEN_RE.findall(text.lower())
 
 
 def build_document_text(row: dict[str, Any] | pd.Series) -> str:
     """Build a row-level retrieval document combining conditions and free-text notes."""
     eid = row.get("experiment_id", "")
     family = row.get("dataset_family", "")
+    inv = row.get("investigation_id", "")
     fuel = row.get("fuel_material", "")
     category = row.get("material_category", "")
+    gravity = row.get("gravity_condition", "")
     outcome = row.get("extinction_outcome", "")
     desc = row.get("sample_description", "")
     notes = row.get("notes", "")
+    hw = row.get("facility_hardware", "")
 
     return (
-        f"Experiment {eid}: family={family}, fuel={fuel}, category={category}, outcome={outcome}. "
+        f"Experiment {eid}: family={family}, investigation={inv}, fuel={fuel}, "
+        f"category={category}, gravity={gravity}, outcome={outcome}, hardware={hw}. "
         f"Description: {desc}. Notes: {notes}"
     )
 
 
+def build_local_hybrid_index(df: pd.DataFrame) -> dict[str, Any]:
+    """Build an offline hybrid index (BM25 + LSA/TF-IDF dense embeddings) for all rows."""
+    docs = [build_document_text(row) for _, row in df.iterrows()]
+    tokenized = [_tokenize(d) for d in docs]
+    doc_lens = [len(t) for t in tokenized]
+    avgdl = sum(doc_lens) / max(1, len(doc_lens))
+
+    # Document frequencies for Okapi BM25
+    df_counts: Counter[str] = Counter()
+    tf_list: list[Counter[str]] = []
+    for toks in tokenized:
+        c = Counter(toks)
+        tf_list.append(c)
+        for term in c:
+            df_counts[term] += 1
+
+    # Word + character n-gram TF-IDF + SVD dense vectors
+    tfidf = TfidfVectorizer(
+        ngram_range=(1, 2),
+        max_features=12000,
+        sublinear_tf=True,
+        stop_words="english",
+    )
+    tfidf_mat = tfidf.fit_transform(docs)
+    n_comp = min(192, tfidf_mat.shape[0] - 1, tfidf_mat.shape[1] - 1)
+    svd = TruncatedSVD(n_components=n_comp, random_state=42)
+    dense_vecs = normalize(svd.fit_transform(tfidf_mat))
+
+    records = []
+    for _, row in df.iterrows():
+        rec = {}
+        for col in df.columns:
+            val = row[col]
+            if hasattr(val, "tolist"):
+                val = val.tolist()
+            rec[col] = val
+        records.append(rec)
+
+    return {
+        "records": records,
+        "docs": docs,
+        "tf_list": tf_list,
+        "doc_lens": doc_lens,
+        "avgdl": avgdl,
+        "df_counts": df_counts,
+        "n_docs": len(docs),
+        "tfidf": tfidf,
+        "svd": svd,
+        "tfidf_mat": tfidf_mat,
+        "dense_vecs": dense_vecs,
+    }
+
+
 class SemanticRetriever:
-    """Manages Qdrant vector store and executes hybrid semantic search."""
+    """Manages hybrid vector + BM25 search with payload filtering and RRF fusion."""
 
     def __init__(
         self,
-        client: QdrantClient | None = None,
+        client: Any | None = None,
         settings: Settings | None = None,
     ) -> None:
         self.settings = settings or get_settings()
-        self.client = client or QdrantClient(path=str(self.settings.qdrant_path))
-        self._dense_model: TextEmbedding | None = None
-        self._sparse_model: SparseTextEmbedding | None = None
+        self.client = client
+        self._local_index: dict[str, Any] | None = None
 
-    @property
-    def dense_model(self) -> TextEmbedding:
-        if self._dense_model is None:
-            self._dense_model = TextEmbedding(model_name=self.settings.embedding_model)
-        return self._dense_model
+    def _get_local_index(self) -> dict[str, Any]:
+        if self._local_index is None:
+            idx_path = self.settings.qdrant_path / LOCAL_INDEX_FILE
+            if idx_path.exists():
+                self._local_index = joblib.load(idx_path)
+            else:
+                # Build on the fly from Parquet snapshot and cache
+                df = pd.read_parquet(self.settings.dataset_output_path)
+                self._local_index = build_local_hybrid_index(df)
+                self.settings.qdrant_path.mkdir(parents=True, exist_ok=True)
+                joblib.dump(self._local_index, idx_path)
+        return self._local_index
 
-    @property
-    def sparse_model(self) -> SparseTextEmbedding:
-        if self._sparse_model is None:
-            self._sparse_model = SparseTextEmbedding(model_name=self.settings.sparse_model)
-        return self._sparse_model
-
-    def build_payload_filter(self, plan: QueryPlan) -> models.Filter:
-        """Map QueryPlan filters to Qdrant payload filters."""
-        must_conditions: list[models.Condition] = []
-
-        # Rule: Exclude modeled rows unless explicitly included
-        if not plan.include_modeled:
-            must_conditions.append(
-                models.FieldCondition(
-                    key="is_modeled",
-                    match=models.MatchValue(value=False),
-                )
-            )
+    @staticmethod
+    def _matches_plan_filters(rec: dict[str, Any], plan: QueryPlan) -> bool:
+        if not plan.include_modeled and bool(rec.get("is_modeled", False)):
+            return False
 
         for f in plan.filters:
-            field = f.field
+            val = rec.get(f.field)
             op = f.op
-            val = f.value
-
+            target = f.value
             if op == FilterOperator.EQ:
-                must_conditions.append(
-                    models.FieldCondition(
-                        key=field,
-                        match=models.MatchValue(value=val),
-                    )
-                )
-            elif op == FilterOperator.IN and isinstance(val, list):
-                must_conditions.append(
-                    models.FieldCondition(
-                        key=field,
-                        match=models.MatchAny(any=val),
-                    )
-                )
-
-        return models.Filter(must=must_conditions if must_conditions else None)
+                if val != target:
+                    return False
+            elif op == FilterOperator.IN and isinstance(target, (list, tuple, set)):
+                if val not in target:
+                    return False
+            elif op == FilterOperator.GTE:
+                if val is None or float(val) < float(target):
+                    return False
+            elif op == FilterOperator.LTE:
+                if val is None or float(val) > float(target):
+                    return False
+            elif op == FilterOperator.BETWEEN and isinstance(target, (list, tuple)):
+                if val is None or not (float(target[0]) <= float(val) <= float(target[1])):
+                    return False
+            elif op == FilterOperator.CONTAINS:
+                if val is None or str(target).lower() not in str(val).lower():
+                    return False
+            elif op == FilterOperator.IS_NULL:
+                if val is not None and not (isinstance(val, float) and math.isnan(val)):
+                    return False
+            elif op == FilterOperator.NOT_NULL:
+                if val is None or (isinstance(val, float) and math.isnan(val)):
+                    return False
+        return True
 
     def search_hybrid(
         self,
@@ -107,42 +188,74 @@ class SemanticRetriever:
         limit: int = 10,
     ) -> list[str]:
         """Perform hybrid RRF search (dense + BM25) and return ranked experiment IDs."""
-        q_filter = self.build_payload_filter(plan)
+        idx = self._get_local_index()
+        records: list[dict[str, Any]] = idx["records"]
+        candidate_indices = [
+            i for i, rec in enumerate(records) if self._matches_plan_filters(rec, plan)
+        ]
+        if not candidate_indices:
+            return []
 
-        dense_vector = next(iter(self.dense_model.embed([query_text]))).tolist()
-        sparse_vec = next(iter(self.sparse_model.embed([query_text])))
+        # 1. Sparse Okapi BM25 scores
+        q_tokens = _tokenize(query_text)
+        n_docs = idx["n_docs"]
+        avgdl = idx["avgdl"]
+        df_counts: Counter[str] = idx["df_counts"]
+        tf_list: list[Counter[str]] = idx["tf_list"]
+        doc_lens: list[int] = idx["doc_lens"]
+        k1 = 1.5
+        b = 0.75
 
-        sparse_query = models.SparseVector(
-            indices=sparse_vec.indices.tolist(),
-            values=sparse_vec.values.tolist(),
-        )
+        bm25_scores: dict[int, float] = {}
+        for i in candidate_indices:
+            score = 0.0
+            dl = doc_lens[i]
+            tfs = tf_list[i]
+            for qt in q_tokens:
+                tf = tfs.get(qt, 0)
+                if tf == 0:
+                    continue
+                df_q = df_counts.get(qt, 0)
+                idf = math.log(1.0 + (n_docs - df_q + 0.5) / (df_q + 0.5))
+                denom = tf + k1 * (1.0 - b + b * (dl / avgdl))
+                score += idf * (tf * (k1 + 1.0)) / denom
+            bm25_scores[i] = score
 
-        response = self.client.query_points(
-            collection_name=COLLECTION_NAME,
-            prefetch=[
-                models.Prefetch(
-                    query=dense_vector,
-                    using="dense",
-                    filter=q_filter,
-                    limit=limit * 2,
-                ),
-                models.Prefetch(
-                    query=sparse_query,
-                    using="sparse",
-                    filter=q_filter,
-                    limit=limit * 2,
-                ),
-            ],
-            query=models.RrfQuery(rrf=models.Rrf(k=60)),
-            limit=limit,
-        )
+        # 2. Dense LSA + exact TF-IDF cosine similarity scores
+        tfidf: TfidfVectorizer = idx["tfidf"]
+        svd: TruncatedSVD = idx["svd"]
+        tfidf_mat = idx["tfidf_mat"]
+        dense_vecs: np.ndarray = idx["dense_vecs"]
 
-        ranked_ids: list[str] = []
-        for point in response.points:
-            if point.payload and "experiment_id" in point.payload:
-                ranked_ids.append(str(point.payload["experiment_id"]))
+        q_tfidf = tfidf.transform([query_text])
+        q_dense = normalize(svd.transform(q_tfidf))[0]
+        lexical_cos = (tfidf_mat @ q_tfidf.T).toarray().ravel()
+        semantic_cos = dense_vecs @ q_dense
 
-        return ranked_ids
+        dense_scores: dict[int, float] = {
+            i: float(0.6 * lexical_cos[i] + 0.4 * semantic_cos[i]) for i in candidate_indices
+        }
+
+        # 3. Reciprocal Rank Fusion (RRF, k=60)
+        bm25_ranked = sorted(candidate_indices, key=lambda i: bm25_scores[i], reverse=True)
+        dense_ranked = sorted(candidate_indices, key=lambda i: dense_scores[i], reverse=True)
+
+        rrf_k = 60.0
+        rrf_scores: dict[int, float] = {i: 0.0 for i in candidate_indices}
+        for rank, doc_idx in enumerate(bm25_ranked, start=1):
+            if bm25_scores[doc_idx] > 0:
+                rrf_scores[doc_idx] += 1.0 / (rrf_k + rank)
+        for rank, doc_idx in enumerate(dense_ranked, start=1):
+            if dense_scores[doc_idx] > 0:
+                rrf_scores[doc_idx] += 1.0 / (rrf_k + rank)
+
+        final_ranked = sorted(
+            candidate_indices,
+            key=lambda i: (rrf_scores[i], bm25_scores[i], dense_scores[i]),
+            reverse=True,
+        )[:limit]
+
+        return [str(records[i]["experiment_id"]) for i in final_ranked]
 
     def verify_index_version(self, expected_sha256: str | None) -> bool:
         """Verify that index metadata matches the current Parquet snapshot version."""
@@ -159,7 +272,9 @@ class SemanticRetriever:
 
 __all__ = [
     "COLLECTION_NAME",
+    "LOCAL_INDEX_FILE",
     "METADATA_FILE",
     "SemanticRetriever",
     "build_document_text",
+    "build_local_hybrid_index",
 ]

@@ -7,6 +7,11 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
+from flame.api.insights import (
+    FlammabilityEngine,
+    RiskSimulationRequest,
+    RiskSimulationResponse,
+)
 from flame.api.rate_limit import InMemoryRateLimiter
 from flame.api.schemas import (
     AskRequest,
@@ -252,6 +257,31 @@ def ask_question(
     )
 
     return response
+
+
+def get_flammability_engine(request: Request) -> FlammabilityEngine:
+    engine = getattr(request.app.state, "flammability_engine", None)
+    if engine is None:
+        engine = FlammabilityEngine(store=request.app.state.store)
+        request.app.state.flammability_engine = engine
+    return engine
+
+
+@router.get("/insights/ranking", tags=["Insights"])
+def get_insights_ranking(request: Request) -> dict[str, Any]:
+    """Return ranked fire-safety findings, dataset family criticality scores, and PSI links."""
+    engine = get_flammability_engine(request)
+    return engine.get_ranked_insights()
+
+
+@router.post("/insights/risk", response_model=RiskSimulationResponse, tags=["Insights"])
+def simulate_risk(
+    body: RiskSimulationRequest,
+    request: Request,
+) -> RiskSimulationResponse:
+    """Predict flammability risk, burn rate, flame temp, and closest historical NASA experiments."""
+    engine = get_flammability_engine(request)
+    return engine.simulate(body)
 
 
 __all__ = ["router"]

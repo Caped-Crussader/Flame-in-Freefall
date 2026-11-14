@@ -6,7 +6,10 @@ import logging
 import time
 from typing import Any
 
-import anthropic
+try:
+    import anthropic
+except ImportError:
+    anthropic = None  # type: ignore[assignment]
 
 from flame.config import Settings, get_settings
 from flame.llm.client import (

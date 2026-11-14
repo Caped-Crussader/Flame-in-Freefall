@@ -1,24 +1,24 @@
-"""FastAPI entrypoint. Run: uvicorn backend.app.main:app --reload --port 8000"""
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+"""FastAPI entrypoint unifying `flame.api` and legacy routes.
 
-from backend.app.api.routes import experiments, insights, chat
-from backend.app.core.config import settings
+Run:
+    PYTHONPATH=src uvicorn backend.app.main:app --reload --port 8000
+"""
+from __future__ import annotations
 
-app = FastAPI(title=settings.APP_NAME, version="0.1.0")
+import sys
+from pathlib import Path
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:8501"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+ROOT_DIR = Path(__file__).resolve().parents[2]
+SRC_DIR = ROOT_DIR / "src"
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
 
-app.include_router(experiments.router, prefix="/api/experiments", tags=["experiments"])
-app.include_router(insights.router, prefix="/api/insights", tags=["insights"])
-app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
+from flame.api.main import app, create_app  # noqa: E402
 
 
-@app.get("/health")
-def health():
+@app.get("/health", tags=["Observability"])
+def root_health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+__all__ = ["app", "create_app"]

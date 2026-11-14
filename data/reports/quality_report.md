@@ -1,8 +1,8 @@
 # Data quality report
 
-- Generated at: `2025-11-13T21:40:00+00:00`
+- Generated at: `2026-11-14T10:06:12+00:00`
 - Pipeline version: `0.3.0`
-- Git commit: `c03126af689d3e769cc7b362705950d6f2dcef94`
+- Git commit: `1444baf038b6538f17ec4aac8b79180a06f3fc23`
 - Rows: **892**
 
 ## Row counts

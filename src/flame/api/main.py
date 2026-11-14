@@ -17,6 +17,7 @@ from flame.api.routes import router
 from flame.config import Settings, get_settings
 from flame.llm.anthropic_client import AnthropicClient
 from flame.llm.client import LLMClient
+from flame.llm.local_client import LocalHeuristicLLMClient
 from flame.llm.openai_compat_client import OpenAICompatClient
 from flame.observability.logging import configure_logging, get_request_id
 from flame.retrieval.errors import PlanValidationError
@@ -44,26 +45,27 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Initialize rate limiter
     app.state.rate_limiter = InMemoryRateLimiter(requests_per_minute=settings.rate_limit_per_minute)
 
-    # Initialize LLM client if API key is provided
+    # Initialize LLM client if API key is provided, wrapped in LocalHeuristicLLMClient fallback
     if not hasattr(app.state, "llm_client") or app.state.llm_client is None:
         if settings.llm_api_key:
             if settings.llm_provider == "openai_compat":
                 logger.info(
                     "Configuring OpenAI-compatible LLM client (model=%s)", settings.llm_model
                 )
-                app.state.llm_client = OpenAICompatClient(
+                delegate: LLMClient | None = OpenAICompatClient(
                     settings=settings,
                     model=settings.llm_model,
                 )
             else:
                 logger.info("Configuring Anthropic LLM client (model=%s)", settings.llm_model)
-                app.state.llm_client = AnthropicClient(
+                delegate = AnthropicClient(
                     settings=settings,
                     model=settings.llm_model,
                 )
+            app.state.llm_client = LocalHeuristicLLMClient(delegate=delegate)
         else:
-            logger.warning("No LLM API key configured; /ask will be unavailable.")
-            app.state.llm_client = None
+            logger.info("No external LLM API key configured; using LocalHeuristicLLMClient.")
+            app.state.llm_client = LocalHeuristicLLMClient()
 
     yield
 
@@ -92,6 +94,8 @@ def create_app(
     app.state.settings = cfg
     if llm_client is not None:
         app.state.llm_client = llm_client
+    else:
+        app.state.llm_client = LocalHeuristicLLMClient()
 
     # Initialize store and rate limiter on the app instance
     app.state.store = ExperimentStore(settings=cfg)
