@@ -1,10 +1,10 @@
-"""Row-level document builder and hybrid semantic + BM25 index integration.
+"""Row-level document builder and hybrid semantic (SentenceTransformer / LSA) + BM25 index integration.
 
 Supports:
-1. Qdrant + FastEmbed when installed.
-2. Pure local Hybrid RRF fallback (scikit-learn dense SVD/TF-IDF + Okapi BM25)
-   stored in `data/interim/qdrant/local_hybrid_index.joblib` + `semantic_meta.json`,
-   which runs 100% offline with zero network downloads.
+1. Pre-installed `sentence-transformers` (`BAAI/bge-small-en-v1.5` / `all-MiniLM-L6-v2`) dense 384-d neural embeddings
+   combined with lexical TF-IDF + Okapi BM25 via Reciprocal Rank Fusion (RRF, k=60).
+2. Automatic air-gapped fallback to scikit-learn dense SVD/TF-IDF + Okapi BM25 when local HuggingFace model
+   weights are not yet cached on disk.
 """
 
 from __future__ import annotations
@@ -24,13 +24,9 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.preprocessing import normalize
 
 try:
-    from fastembed import SparseTextEmbedding, TextEmbedding
-    from qdrant_client import QdrantClient, models
+    from sentence_transformers import SentenceTransformer
 except ImportError:
-    SparseTextEmbedding = None  # type: ignore[assignment,misc]
-    TextEmbedding = None  # type: ignore[assignment,misc]
-    QdrantClient = None  # type: ignore[assignment,misc]
-    models = None  # type: ignore[assignment]
+    SentenceTransformer = None  # type: ignore[assignment,misc]
 
 from flame.config import Settings, get_settings
 from flame.schemas.query_plan import FilterOperator, QueryPlan
@@ -42,10 +38,36 @@ METADATA_FILE = "semantic_meta.json"
 LOCAL_INDEX_FILE = "local_hybrid_index.joblib"
 
 _TOKEN_RE = re.compile(r"[a-z0-9]+(?:[-.][a-z0-9]+)*")
+_ST_MODEL_CACHE: dict[str, Any] = {}
 
 
 def _tokenize(text: str) -> list[str]:
     return _TOKEN_RE.findall(text.lower())
+
+
+def _load_sentence_transformer(model_name: str, allow_download: bool = False) -> Any | None:
+    """Load SentenceTransformer from local HuggingFace cache (or download if allow_download=True)."""
+    if SentenceTransformer is None:
+        return None
+    if model_name in _ST_MODEL_CACHE:
+        return _ST_MODEL_CACHE[model_name]
+
+    # Try local cache first so sandboxed/offline execution never hangs on network timeouts
+    try:
+        model = SentenceTransformer(model_name, local_files_only=True)
+        _ST_MODEL_CACHE[model_name] = model
+        return model
+    except Exception:
+        if not allow_download:
+            return None
+
+    try:
+        model = SentenceTransformer(model_name, local_files_only=False)
+        _ST_MODEL_CACHE[model_name] = model
+        return model
+    except Exception as err:
+        logger.warning("Could not load SentenceTransformer '%s': %s", model_name, err)
+        return None
 
 
 def build_document_text(row: dict[str, Any] | pd.Series) -> str:
@@ -68,14 +90,18 @@ def build_document_text(row: dict[str, Any] | pd.Series) -> str:
     )
 
 
-def build_local_hybrid_index(df: pd.DataFrame) -> dict[str, Any]:
-    """Build an offline hybrid index (BM25 + LSA/TF-IDF dense embeddings) for all rows."""
+def build_local_hybrid_index(
+    df: pd.DataFrame,
+    model_name: str = "BAAI/bge-small-en-v1.5",
+    allow_download: bool = False,
+) -> dict[str, Any]:
+    """Build a hybrid index (SentenceTransformer neural dense + LSA/TF-IDF + Okapi BM25) for all rows."""
     docs = [build_document_text(row) for _, row in df.iterrows()]
     tokenized = [_tokenize(d) for d in docs]
     doc_lens = [len(t) for t in tokenized]
     avgdl = sum(doc_lens) / max(1, len(doc_lens))
 
-    # Document frequencies for Okapi BM25
+    # 1. Document frequencies for Okapi BM25
     df_counts: Counter[str] = Counter()
     tf_list: list[Counter[str]] = []
     for toks in tokenized:
@@ -84,7 +110,7 @@ def build_local_hybrid_index(df: pd.DataFrame) -> dict[str, Any]:
         for term in c:
             df_counts[term] += 1
 
-    # Word + character n-gram TF-IDF + SVD dense vectors
+    # 2. Word + bigram TF-IDF + SVD dense vectors
     tfidf = TfidfVectorizer(
         ngram_range=(1, 2),
         max_features=12000,
@@ -95,6 +121,22 @@ def build_local_hybrid_index(df: pd.DataFrame) -> dict[str, Any]:
     n_comp = min(192, tfidf_mat.shape[0] - 1, tfidf_mat.shape[1] - 1)
     svd = TruncatedSVD(n_components=n_comp, random_state=42)
     dense_vecs = normalize(svd.fit_transform(tfidf_mat))
+
+    # 3. Optional SentenceTransformer 384-d neural embeddings when cached/available
+    st_model = _load_sentence_transformer(model_name, allow_download=allow_download)
+    st_vecs: np.ndarray | None = None
+    dense_backend = "tfidf-svd"
+    if st_model is not None:
+        try:
+            st_vecs = np.asarray(
+                st_model.encode(docs, normalize_embeddings=True, show_progress_bar=False),
+                dtype=np.float32,
+            )
+            dense_backend = f"sentence-transformers ({model_name})"
+            logger.info("Encoded %d documents with SentenceTransformer (%s)", len(docs), model_name)
+        except Exception as err:
+            logger.warning("SentenceTransformer encoding failed (%s); using TF-IDF/SVD.", err)
+            st_vecs = None
 
     records = []
     for _, row in df.iterrows():
@@ -118,11 +160,14 @@ def build_local_hybrid_index(df: pd.DataFrame) -> dict[str, Any]:
         "svd": svd,
         "tfidf_mat": tfidf_mat,
         "dense_vecs": dense_vecs,
+        "st_vecs": st_vecs,
+        "embedding_model": model_name,
+        "dense_backend": dense_backend,
     }
 
 
 class SemanticRetriever:
-    """Manages hybrid vector + BM25 search with payload filtering and RRF fusion."""
+    """Manages hybrid neural/dense vector + BM25 search with payload filtering and RRF fusion."""
 
     def __init__(
         self,
@@ -139,12 +184,19 @@ class SemanticRetriever:
             if idx_path.exists():
                 self._local_index = joblib.load(idx_path)
             else:
-                # Build on the fly from Parquet snapshot and cache
                 df = pd.read_parquet(self.settings.dataset_output_path)
-                self._local_index = build_local_hybrid_index(df)
+                self._local_index = build_local_hybrid_index(
+                    df, model_name=self.settings.embedding_model, allow_download=False
+                )
                 self.settings.qdrant_path.mkdir(parents=True, exist_ok=True)
                 joblib.dump(self._local_index, idx_path)
         return self._local_index
+
+    @property
+    def dense_backend(self) -> str:
+        """Return the active dense embedding backend name."""
+        idx = self._get_local_index()
+        return str(idx.get("dense_backend", "tfidf-svd"))
 
     @staticmethod
     def _matches_plan_filters(rec: dict[str, Any], plan: QueryPlan) -> bool:
@@ -187,7 +239,7 @@ class SemanticRetriever:
         plan: QueryPlan,
         limit: int = 10,
     ) -> list[str]:
-        """Perform hybrid RRF search (dense + BM25) and return ranked experiment IDs."""
+        """Perform hybrid RRF search (SentenceTransformer/LSA dense + BM25) and return ranked IDs."""
         idx = self._get_local_index()
         records: list[dict[str, Any]] = idx["records"]
         candidate_indices = [
@@ -221,20 +273,41 @@ class SemanticRetriever:
                 score += idf * (tf * (k1 + 1.0)) / denom
             bm25_scores[i] = score
 
-        # 2. Dense LSA + exact TF-IDF cosine similarity scores
+        # 2. Dense neural SentenceTransformer + LSA/TF-IDF cosine similarity scores
         tfidf: TfidfVectorizer = idx["tfidf"]
         svd: TruncatedSVD = idx["svd"]
         tfidf_mat = idx["tfidf_mat"]
         dense_vecs: np.ndarray = idx["dense_vecs"]
+        st_vecs: np.ndarray | None = idx.get("st_vecs")
+        emb_model_name = str(idx.get("embedding_model") or self.settings.embedding_model)
 
         q_tfidf = tfidf.transform([query_text])
         q_dense = normalize(svd.transform(q_tfidf))[0]
         lexical_cos = (tfidf_mat @ q_tfidf.T).toarray().ravel()
         semantic_cos = dense_vecs @ q_dense
 
-        dense_scores: dict[int, float] = {
-            i: float(0.6 * lexical_cos[i] + 0.4 * semantic_cos[i]) for i in candidate_indices
-        }
+        st_cos: np.ndarray | None = None
+        if st_vecs is not None:
+            st_model = _load_sentence_transformer(emb_model_name, allow_download=False)
+            if st_model is not None:
+                try:
+                    q_st = np.asarray(
+                        st_model.encode([query_text], normalize_embeddings=True, show_progress_bar=False)[0],
+                        dtype=np.float32,
+                    )
+                    st_cos = st_vecs @ q_st
+                except Exception:
+                    st_cos = None
+
+        if st_cos is not None:
+            dense_scores: dict[int, float] = {
+                i: float(0.55 * st_cos[i] + 0.30 * lexical_cos[i] + 0.15 * semantic_cos[i])
+                for i in candidate_indices
+            }
+        else:
+            dense_scores = {
+                i: float(0.60 * lexical_cos[i] + 0.40 * semantic_cos[i]) for i in candidate_indices
+            }
 
         # 3. Reciprocal Rank Fusion (RRF, k=60)
         bm25_ranked = sorted(candidate_indices, key=lambda i: bm25_scores[i], reverse=True)

@@ -16,11 +16,15 @@ from components.charts import (  # noqa: E402
     atmosphere_envelope_chart,
     spread_vs_oxygen_chart,
 )
+from components.theme import apply_flame_theme  # noqa: E402
 
 st.set_page_config(page_title="Explorer | Flame in Freefall", page_icon="🔎", layout="wide")
 
-st.title("🔎 Experiment & Provenance Explorer")
-st.caption("Filter all 892 NASA/JAXA combustion records, inspect data-quality flags, and trace raw source rows.")
+apply_flame_theme(
+    title="Experiment & Provenance Explorer",
+    subtitle="Filter all 892 NASA/JAXA combustion records, inspect data-quality flags, and trace raw source rows across 44 schema columns.",
+    badge="PROVENANCE & DATASET EXPLORER • 892 EXPERIMENTS",
+)
 
 parquet_path = ROOT_DIR / "data" / "processed" / "experiments.parquet"
 df = pd.read_parquet(parquet_path)

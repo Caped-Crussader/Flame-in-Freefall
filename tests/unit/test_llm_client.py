@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import anthropic
 import pytest
+
+anthropic = pytest.importorskip("anthropic")
 
 from flame.config import Settings
 from flame.llm.anthropic_client import AnthropicClient

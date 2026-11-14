@@ -2,26 +2,21 @@
 
 from __future__ import annotations
 
-import duckdb
 import pytest
 
-from flame.config import get_settings
 from flame.retrieval.catalog import build_field_catalog
+from flame.retrieval.store import ExperimentStore
 
 
 @pytest.fixture
-def cursor() -> duckdb.DuckDBPyConnection:
-    settings = get_settings()
-    conn = duckdb.connect(database=":memory:")
-    parquet_posix = settings.dataset_output_path.as_posix()
-    conn.execute(f"CREATE VIEW experiments AS SELECT * FROM read_parquet('{parquet_posix}')")
-    cur = conn.cursor()
-    yield cur
-    cur.close()
-    conn.close()
+def cursor():
+    with ExperimentStore() as store:
+        cur = store.get_cursor()
+        yield cur
+        cur.close()
 
 
-def test_catalog_build_and_coverage(cursor: duckdb.DuckDBPyConnection) -> None:
+def test_catalog_build_and_coverage(cursor) -> None:
     catalog = build_field_catalog(cursor)
     assert len(catalog.fields) == 44
     assert len(catalog.field_names) == 44

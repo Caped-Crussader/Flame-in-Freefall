@@ -1,4 +1,4 @@
-﻿"""Serve the built React app from FastAPI (Phase 10).
+"""Serve the built React app from FastAPI (Phase 10).
 
 Call mount_frontend(app) as the LAST registration in create_app(), after all
 /api routers.
@@ -16,10 +16,15 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 # src/flame/api/frontend_mount.py -> repo root is parents[3]
-DEFAULT_DIST = Path(__file__).resolve().parents[3] / "frontend" / "dist"
+REPO_ROOT = Path(__file__).resolve().parents[3]
+DEFAULT_DIST = REPO_ROOT / "web" / "dist"
 
 
-def mount_frontend(app: FastAPI, dist: Path = DEFAULT_DIST) -> None:
+def mount_frontend(app: FastAPI, dist: Path | None = None) -> None:
+    if dist is None:
+        web_dist = REPO_ROOT / "web" / "dist"
+        legacy_dist = REPO_ROOT / "frontend" / "dist"
+        dist = web_dist if (web_dist / "index.html").is_file() else legacy_dist
     dist = Path(dist).resolve()
     index = dist / "index.html"
     if not index.is_file():

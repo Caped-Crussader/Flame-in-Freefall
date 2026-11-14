@@ -50,6 +50,9 @@ def test_insights_ranking_and_risk_simulator():
     rank_body = r_rank.json()
     assert len(rank_body["findings"]) == 5
     assert len(rank_body["family_rankings"]) >= 28
+    assert len(rank_body["historical_incidents"]) == 4
+    assert len(rank_body["psi_dossiers"]) >= 3
+    assert len(rank_body["psi_experimental_tables"]) >= 3
 
     r_risk = client.post(
         "/api/v1/insights/risk",
@@ -64,6 +67,23 @@ def test_insights_ranking_and_risk_simulator():
     risk_body = r_risk.json()
     assert risk_body["risk_level"] in {"LOW", "MODERATE", "HIGH", "CRITICAL"}
     assert len(risk_body["nearest_experiments"]) == 5
+    env = risk_body["envelope"]
+    assert len(env["pressure_grid_kpa"]) == 19
+    assert len(env["oxygen_grid_pct"]) == 19
+    assert len(env["risk_matrix"]) == 19
+    assert len(env["moc_0g_o2_pct"]) == 19
+    assert len(env["moc_1g_std6001_o2_pct"]) == 19
+    assert len(env["airflow_risk_matrix"]) == 19
+
+
+def test_evaluation_scorecard():
+    r_eval = client.get("/api/v1/evaluation")
+    assert r_eval.status_code == 200
+    body = r_eval.json()
+    assert body["overall_evaluated"] == 65
+    assert body["overall_passed"] == 65
+    assert body["overall_pass_rate"] == 1.0
+    assert body["qualitative_recall_at_10"] == 1.0
 
 
 def test_ask_structured_and_qualitative():

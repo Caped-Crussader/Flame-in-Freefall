@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import duckdb
 import pytest
 
-from flame.config import get_settings
+from flame.retrieval.store import ExperimentStore
 from flame.retrieval.structured import execute_plan
 from flame.schemas.query_plan import (
     AggregateFunction,
@@ -18,15 +17,11 @@ from flame.schemas.query_plan import (
 
 
 @pytest.fixture
-def cursor() -> duckdb.DuckDBPyConnection:
-    settings = get_settings()
-    conn = duckdb.connect(database=":memory:")
-    parquet_posix = settings.dataset_output_path.as_posix()
-    conn.execute(f"CREATE VIEW experiments AS SELECT * FROM read_parquet('{parquet_posix}')")
-    cur = conn.cursor()
-    yield cur
-    cur.close()
-    conn.close()
+def cursor():
+    with ExperimentStore() as store:
+        cur = store.get_cursor()
+        yield cur
+        cur.close()
 
 
 def test_modeled_rows_never_appear_in_default_results(cursor: duckdb.DuckDBPyConnection) -> None:

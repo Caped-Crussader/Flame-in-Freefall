@@ -85,25 +85,12 @@ def main():
         downloaded_tables = []
         for tbl in exp_tables + mod_tables + readmes:
             fname = tbl.get("file_name", "")
-            # Download CSVs, TXTs, and small metadata files (< 15 MB)
+            # Download only curated experimentalTable, modelingTable, and readme files (< 15 MB)
             fsize = tbl.get("file_size") or 0
             if fsize < 15_000_000:
                 saved = download_study_file(session, acc, tbl, tables_dir / acc)
                 if saved:
                     downloaded_tables.append(str(saved.relative_to(RAW_PSI_DIR)))
-
-        # Also check `added` for small CSVs/TSVs/TXTs in case experimentalTable wasn't populated
-        for added_file in detail.get("added") or []:
-            fname = added_file.get("file_name", "")
-            fsize = added_file.get("file_size") or 0
-            ext = Path(fname).suffix.lower()
-            if ext in {".csv", ".tsv", ".txt"} and 0 < fsize < 10_000_000:
-                if not added_file.get("psi_legacy"):
-                    saved = download_study_file(session, acc, added_file, tables_dir / acc)
-                    if saved:
-                        rel = str(saved.relative_to(RAW_PSI_DIR))
-                        if rel not in downloaded_tables:
-                            downloaded_tables.append(rel)
 
         summary_rows.append(
             {

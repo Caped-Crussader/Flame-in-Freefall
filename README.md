@@ -41,6 +41,21 @@ NSAP/
 ├── backend/app/
 │   ├── main.py                     # ASGI entrypoint mounting flame.api (:8000)
 │   └── core/http.py                # Verified TLS/SSL session helper for NASA PSI & Space Apps
+├── web/                            # React 19 + TypeScript + Vite SPA (:5173 / mounted on :8000)
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── FlameBackground.tsx # 60 FPS HTML5 Canvas flame plumes + 0g blue microgravity orb
+│   │   │   ├── AnswerPanel.tsx     # Grounded Markdown + interactive [ID] citation chips
+│   │   │   ├── EvidenceTable.tsx   # Sortable evidence table with provenance flags
+│   │   │   └── DetailDrawer.tsx    # Slide-over 44-column provenance & audit drawer
+│   │   ├── pages/
+│   │   │   ├── Home.tsx            # Hero, live KPI counter strip & architecture overview
+│   │   │   ├── Explorer.tsx        # 892-row interactive dataset & provenance explorer
+│   │   │   ├── Insights.tsx        # Top 5 findings, 4 historical incidents & live PSI CSV tables
+│   │   │   ├── Simulator.tsx       # 2D MOC flammability canvas & airflow quench/blowoff maps
+│   │   │   └── Dashboard.tsx       # Dataset family breakdown & data quality audit
+│   │   └── App.tsx                 # Grounded Hybrid RAG Q&A + Live 65/65 Benchmark Scorecard
+│   └── tests/                      # 33 Vitest + Testing Library unit & integration tests
 ├── frontend/                       # Streamlit interactive dashboard (:8501)
 │   ├── app.py                      # Mission Control Home (KPIs, caveats, atmosphere envelope)
 │   ├── pages/
@@ -85,18 +100,25 @@ PYTHONPATH=src python scripts/build_dataset.py
 PYTHONPATH=src python scripts/build_index.py
 ```
 
-### 3. Run the Dashboard & API
-You can launch both the FastAPI server (`http://localhost:8000`) and the Streamlit dashboard (`http://localhost:8501`) together:
+### 3. Run the React UI & FastAPI Backend
+You can launch the FastAPI server (`http://localhost:8000`) and the React 19 + Vite UI (`http://localhost:5173`) together:
 ```bash
 bash scripts/run_local.sh
 ```
-Or run the Streamlit dashboard standalone (it automatically falls back to an embedded in-process FastAPI client if port `8000` is not running):
+Or serve the production React bundle (`web/dist`) directly from FastAPI on a single port (`http://localhost:8000`):
 ```bash
-PYTHONPATH=src:. .venv/bin/streamlit run frontend/app.py --server.port 8501
+npm run build --prefix web
+PYTHONPATH=src:. .venv/bin/uvicorn backend.app.main:app --port 8000
+```
+Or run the Streamlit dashboard (`http://localhost:8501`):
+```bash
+bash scripts/run_local.sh --streamlit
 ```
 
-- **Streamlit Dashboard:** http://localhost:8501
+- **React 19 + Vite UI (Dev):** http://localhost:5173
+- **Unified FastAPI + React SPA (Prod):** http://localhost:8000
 - **FastAPI OpenAPI Docs:** http://localhost:8000/docs
+- **Streamlit Dashboard:** http://localhost:8501
 
 ---
 
@@ -110,14 +132,20 @@ PYTHONPATH=src:. .venv/bin/streamlit run frontend/app.py --server.port 8501
 | `GET` | `/api/v1/experiments` | Filtered & paginated experiments (`dataset_family`, `fuel_material`, `is_modeled`, `limit`, `offset`) |
 | `GET` | `/api/v1/experiments/{id}` | Single experiment record with all 44 canonical, enrichment, and provenance columns |
 | `GET` | `/api/v1/insights/ranking` | Top 5 ranked spacecraft fire-safety insights, family criticality rankings, and PSI catalog |
-| `POST` | `/api/v1/insights/risk` | ML flammability risk score, burn rate, flame temp, and 5 closest historical NASA/JAXA experiments |
+| `POST` | `/api/v1/insights/risk` | ML flammability risk score, burn rate, flame temp, 2D MOC flammability envelope (`19×19`), and 5 closest historical NASA/JAXA experiments |
 | `POST` | `/api/v1/ask` | End-to-end grounded RAG (`plan -> retrieve -> generate -> guardrails`) returning answer, citations, `QueryPlan`, aggregates, and evidence rows |
+| `GET` | `/api/v1/evaluation` | Latest 65-question golden benchmark scorecard (`65/65 = 100.0%` pass rate, `100.0%` Hybrid RRF Recall@10) |
+| `POST` | `/api/v1/evaluation/run` | Executes all 65 golden benchmark questions live and returns the updated scorecard |
 
 ---
 
 ## 🧪 Running Tests
 
-Run the full test suite (113 unit and API integration tests):
+Run the full Python backend test suite (**173 unit and API integration tests**) and the React frontend test suite (**33 Vitest tests**):
+```bash
+PYTHONPATH=src:. .venv/bin/pytest -q tests/
+npm test --prefix web
+```
 ```bash
 PYTHONPATH=src:. .venv/bin/pytest -q tests/test_api.py tests/unit/test_clean_dates.py \
   tests/unit/test_clean_numeric.py tests/unit/test_clean_vocab.py tests/unit/test_enrich.py \

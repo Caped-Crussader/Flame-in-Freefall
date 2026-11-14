@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import duckdb
 import pytest
 
 from flame.retrieval.compiler import (
@@ -10,6 +9,7 @@ from flame.retrieval.compiler import (
     compile_plan,
     compile_where_clause,
 )
+from flame.retrieval.store import ExperimentStore
 from flame.schemas.query_plan import (
     AggregateFunction,
     AggregateSpec,
@@ -42,30 +42,17 @@ def test_sql_injection_in_filter_value_remains_parameterized() -> None:
     assert "fuel_material = ?" in compiled.rows_query.sql
     assert injection_payload in compiled.rows_query.params
 
-    # Execute safely in DuckDB without error and without executing DROP TABLE
-    conn = duckdb.connect(":memory:")
-    conn.execute(
-        "CREATE TABLE experiments ("
-        "experiment_id VARCHAR, "
-        "source_url VARCHAR, "
-        "investigation_id VARCHAR, "
-        "data_quality_flags VARCHAR[], "
-        "is_modeled BOOLEAN, "
-        "fuel_material VARCHAR"
-        ")"
-    )
-    conn.execute("INSERT INTO experiments VALUES ('E1', 'http://a', 'INV1', [], FALSE, 'Methanol')")
+    # Execute safely in ExperimentStore without error and without executing DROP TABLE
+    with ExperimentStore() as store:
+        cur = store.get_cursor()
+        cur.execute(compiled.rows_query.sql, compiled.rows_query.params)
+        results = cur.fetchall()
+        assert len(results) == 0  # No row matches the injection string
 
-    cur = conn.cursor()
-    cur.execute(compiled.rows_query.sql, compiled.rows_query.params)
-    results = cur.fetchall()
-    assert len(results) == 0  # No row matches the injection string
-
-    # Table still exists intact
-    count = cur.execute("SELECT COUNT(*) FROM experiments").fetchone()[0]
-    assert count == 1
-    cur.close()
-    conn.close()
+        # Table still exists intact
+        count = cur.execute("SELECT COUNT(*) FROM experiments").fetchone()[0]
+        assert count == 892
+        cur.close()
 
 
 def test_sql_injection_in_contains_remains_parameterized() -> None:

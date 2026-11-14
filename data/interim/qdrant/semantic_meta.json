@@ -1,6 +1,7 @@
 {
   "parquet_sha256": "4b3139dc07546aa01ab89b3a0b02411a25c02be681275b9619bda57aba7b33cf",
   "embedding_model": "BAAI/bge-small-en-v1.5",
+  "dense_backend": "sentence-transformers (BAAI/bge-small-en-v1.5)",
   "sparse_model": "Qdrant/bm25",
   "total_indexed": 892
 }

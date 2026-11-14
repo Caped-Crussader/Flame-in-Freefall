@@ -54,12 +54,17 @@ def build_semantic_index(
 
     logger.info("Building hybrid semantic + BM25 index from %s...", parquet_path)
     df = pd.read_parquet(parquet_path)
-    index_data = build_local_hybrid_index(df)
+    index_data = build_local_hybrid_index(
+        df,
+        model_name=cfg.embedding_model,
+        allow_download=True,
+    )
     joblib.dump(index_data, idx_path)
 
     meta = {
         "parquet_sha256": parquet_sha256,
         "embedding_model": cfg.embedding_model,
+        "dense_backend": index_data.get("dense_backend", "tfidf-svd"),
         "sparse_model": cfg.sparse_model,
         "total_indexed": len(df),
     }

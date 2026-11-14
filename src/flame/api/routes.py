@@ -284,4 +284,26 @@ def simulate_risk(
     return engine.simulate(body)
 
 
+@router.get("/evaluation", tags=["Evaluation"])
+def get_evaluation_scorecard() -> dict[str, Any]:
+    """Return the latest 65-question Golden Benchmark evaluation scorecard."""
+    import json
+    from flame.config import PROJECT_ROOT
+
+    latest_json = PROJECT_ROOT / "evaluation" / "results" / "latest.json"
+    if latest_json.exists():
+        return json.loads(latest_json.read_text(encoding="utf-8"))  # type: ignore[no-any-return]
+    from evaluation.run_eval import run_evaluation
+
+    return run_evaluation()
+
+
+@router.post("/evaluation/run", tags=["Evaluation"])
+def trigger_evaluation_run() -> dict[str, Any]:
+    """Re-run all 65 golden benchmark questions and return the updated scorecard."""
+    from evaluation.run_eval import run_evaluation
+
+    return run_evaluation()
+
+
 __all__ = ["router"]

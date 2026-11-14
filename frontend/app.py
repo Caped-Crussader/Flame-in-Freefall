@@ -20,6 +20,7 @@ from components.charts import (  # noqa: E402
     atmosphere_envelope_chart,
     family_distribution_chart,
 )
+from components.theme import apply_flame_theme  # noqa: E402
 
 st.set_page_config(
     page_title="Flame in Freefall | NASA Space Apps 2026",
@@ -27,9 +28,10 @@ st.set_page_config(
     layout="wide",
 )
 
-# Header
-st.title("🔥 Flame in Freefall")
-st.subheader("SI-Powered Fire Safety Insights from NASA/JAXA Microgravity Combustion Data")
+apply_flame_theme(
+    title="Flame in Freefall",
+    subtitle="SI-Powered Fire Safety Insights from NASA/JAXA Microgravity Combustion Data (892 Validated Records • 30 Dataset Families • Hybrid RRF & ML Risk Engine)",
+)
 
 ready = health()
 meta = get("/meta")
