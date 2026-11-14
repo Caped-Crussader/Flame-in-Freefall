@@ -2,6 +2,8 @@
 **SI-Powered Fire Safety Insights from NASA/JAXA Microgravity Combustion Data**  
 *2026 NASA Space Apps Challenge*
 
+<img width="2185" height="1355" alt="Screenshot From 2026-11-14 15-57-31" src="https://github.com/user-attachments/assets/d49a69a8-1929-4cc7-afd5-c8ff3693bb4d" />
+
 An interactive decision-support dashboard and hybrid retrieval-augmented generation (RAG) system that unifies decades of NASA and JAXA microgravity combustion experiments (**892 experiments × 44 columns** across **30 dataset families** and **35 investigations**) to deliver deterministic, citation-grounded fire-safety insights for ISS, Artemis lunar habitats, and Mars transit missions.
 
 ---
