@@ -335,3 +335,4 @@ The following decisions need owner approval before the dataset is treated as fin
 - The `UNVERIFIED` items in `docs/data_dictionary.md`, especially the cross-family meaning of `burning_rate_mms` and the provenance of `he_pct` for non-FLEX families.
 - Whether the 442 legacy-carried rows should ever be re-derived from their raw tables.
 
+<!-- Karan contribution -->
