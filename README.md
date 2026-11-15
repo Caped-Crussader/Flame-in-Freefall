@@ -2,7 +2,7 @@
 **SI-Powered Fire Safety Insights from NASA/JAXA Microgravity Combustion Data**  
 *2026 NASA Space Apps Challenge*
 
-Video Demo : https://www.youtube.com/watch?v=Ej8UTyzgnrQ
+Video Demo (play at 0.7x speed): https://www.youtube.com/watch?v=Ej8UTyzgnrQ
 
 
 Live Demo (minimal): https://flame-in-freefall-jim1.onrender.com
