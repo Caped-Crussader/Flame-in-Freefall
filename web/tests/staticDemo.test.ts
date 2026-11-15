@@ -142,6 +142,10 @@ describe('Static demo fallback for serverless static hosting (Render / GitHub Pa
     });
     expect(dossier.dossier_id).toMatch(/^IGNIS-CERT-DEMO-/);
     expect(dossier.html_printable).toContain('IGNIS Mission Fire-Safety Dossier');
+    expect(dossier.html_printable).toContain('<svg viewBox="0 0 500 220"');
+    expect(dossier.html_printable).toContain('0g Microgravity MOC Boundary');
+    expect(dossier.html_printable).toContain('Print / Save as PDF');
+    expect(dossier.markdown_report).toContain('Coupled Microgravity Physics & Ensemble ML Flammability Assessment');
 
     const cachedAsk = await ask('What about PMMA?');
     expect(cachedAsk.evidence.map((e) => e.experiment_id)).toContain('ACME-BRE-003');

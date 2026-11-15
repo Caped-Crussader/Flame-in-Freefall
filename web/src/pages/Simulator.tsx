@@ -425,6 +425,7 @@ export function Simulator() {
   const [copiedMd, setCopiedMd] = useState<boolean>(false);
 
   useEffect(() => {
+    setDossier(null);
     const ctl = new AbortController();
     simulateRisk(
       {
@@ -479,9 +480,18 @@ export function Simulator() {
   };
 
   const handlePrintPdfDossier = async () => {
-    const d = await fetchDossier();
-    if (!d) return;
+    // Open tab synchronously within click gesture before async fetch so Firefox/Chrome don't block it
     const win = window.open('', '_blank');
+    if (win) {
+      win.document.open();
+      win.document.write('<!doctype html><html><body style="font-family:sans-serif;padding:24px;">Compiling IGNIS Mission Fire-Safety Dossier…</body></html>');
+      win.document.close();
+    }
+    const d = dossier ?? (await fetchDossier());
+    if (!d) {
+      win?.close();
+      return;
+    }
     if (win) {
       win.document.open();
       win.document.write(d.html_printable);
