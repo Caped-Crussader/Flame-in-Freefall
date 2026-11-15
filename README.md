@@ -14,18 +14,19 @@ An interactive **React 19 + TypeScript + Vite** decision-support application (wi
 ## ✨ Key Capabilities
 
 1. **Modern React 19 + TypeScript + Vite SPA with 60 FPS Animated Flame Canvas (`web/`):**
-   - **Real-Time Combustion Canvas (`web/src/components/FlameBackground.tsx`):** Full-viewport 60 FPS HTML5 `<canvas>` rendering multi-layered turbulent rising flame plumes along the lower horizon, an interactive cursor-parallax **$0g$ spherical blue/cyan microgravity diffusion flame orb** (`FLEX` / `ACME` signature), and rising glowing ember & chemi-ion particles behind frosted glassmorphism cards.
+   - **Real-Time Combustion Canvas & Aerospace UI (`web/src/components/FlameBackground.tsx`, `web/src/pages/SiteNav.tsx`):** Floating pill navigation (`01 Overview`, `02 Explorer`, `03 Physics Lab`, `04 Risk Simulator`, `05 Analytics`, `Ask IGNIS`) with a dark/light theme toggle over a full-viewport 60 FPS HTML5 `<canvas>` rendering turbulent bottom-horizon flame plumes, an interactive cursor-parallax **$0g$ spherical blue/cyan microgravity diffusion flame orb**, and drifting amber/cyan embers.
    - **6 Interactive Modules:**
-     - `#/` **Mission Control Home:** Animated KPI counters (`892` total rows, `840` physical $0g$ tests, `52` modeled partial-$g$ rows, `42` quarantined sensor rows) and system architecture overview.
-     - `#/explorer` **892-Row Experiment & Provenance Explorer:** Filter by 30 dataset families, search across IDs/fuels/notes/outcomes, toggle `is_modeled=True` rows, inspect data-quality flags, and open any experiment's 44-column slide-over provenance drawer.
-     - `#/insights` **Ranked Findings, Historical Spacecraft Incidents & Live NASA PSI Tables:** Top 5 ranked safety findings, 4 historical spacecraft fire case studies (**Apollo 1**, **Apollo 13**, **1997 Mir Space Station Vika/TGK fire**, and **ISS-to-Artemis SEA transition**), 30 dataset family criticality rankings, and an interactive viewer for live downloaded NASA PSI experimental CSV tables (`PSI-10` Inverse & Normal Flame CSVs, `PSI-22` ACME E-FIELD CSV, and `PSI-26` BASS-II).
-     - `#/simulator` **Physics-Informed 2D MOC Flammability Simulator, Detection/Suppression Advisor & Exportable Safety Dossier:**
+     - `#/` **01 Overview (`Home.tsx`):** Animated telemetry KPI strip (`StatStrip`), interactive **1g vs. 0g Gravity Regime Comparator** (buoyant teardrop plume vs. spherical diffusion & oxygen-starved quenching), 4-stage architecture pipeline, **6 clickable measured NASA PSI sample cards** (opening the 44-column `DetailDrawer`), and Scientific Trust Guardrails.
+     - `#/explorer` **02 Explorer (`Explorer.tsx`):** Filter across 30 dataset families, search across IDs/fuels/notes/outcomes, opt-in `Include 52 Modeled Partial-g Rows (is_modeled=True)`, inspect the live **Fixed vs. Varied Experimental Variables & Sensors Summary**, and open any experiment's 44-column slide-over provenance drawer.
+     - `#/insights` **03 Physics Lab (`Insights.tsx`):** 5 interactive tabs covering **Top 5 Ranked Findings**, **Historical Spacecraft Incidents (4)** (**Apollo 1**, **Apollo 13**, **1997 Mir Space Station Vika/TGK fire**, **ISS-to-Artemis SEA transition**), **Family Criticality Ranking (30)**, **Investigation Objectives & Comparator (24)** (side-by-side PSI study comparator with 4 quick NASA presets such as `SAME vs. DAFT` and `ACME-BRE vs. BASS-II`, plus searchable 24-investigation objectives cards), and **Live NASA PSI Tables & Dossiers** (`PSI-10`, `PSI-22`, `PSI-26` CSVs).
+     - `#/simulator` **04 Risk Simulator (`Simulator.tsx`):**
+       - **6 Mission Atmosphere Presets & Expanded Controls:** One-click presets for **ISS Standard** (`21% O₂, 101.3 kPa`), **Artemis Lunar Habitat** (`34% O₂, 56.5 kPa`), **Lunar Interim** (`30% O₂, 70.3 kPa / 10.2 psi`), **EVA Spacesuit** (`100% O₂, 29.6 kPa / 4.3 psi`), **ACME CFI-G Extreme** (`85% O₂, 101.3 kPa`), and **Fans Off / Quiescent** (`21% O₂, 0 cm/s`), paired with `12%–100% O₂`, `20–120 kPa` (with live `psi`), `0–55 cm/s` airflow sliders, and 13 canonical materials.
        - **7-Feature Coupled Physics + Ensemble ML Engine:** Evaluates $\text{O}_2\%$, Cabin Pressure ($\text{kPa}$), HVAC Airflow ($\text{cm/s}$), Material Hazard, **Oxygen Partial Pressure ($P_{\text{O}_2}$)**, **Inert Diluent Heat-Sink Ratio ($\text{N}_2/\text{O}_2$)**, and **Microgravity Peclet Transport Factor ($\text{Pe}_{\text{eff}}$)** with **90% Ensemble Prediction Intervals (`[p10, p90]`)** and **Epistemic Confidence (`HIGH` / `MODERATE` / `EXPLORATORY`)**.
-       - **Interactive 2D Contour Maps:** Click-to-set HTML5 `<canvas>` contour maps for the **2D Pressure × $\text{O}_2\%$ Flammability Envelope** (comparing the **$0g$ Microgravity MOC curve** vs. **$1g$ `NASA-STD-6001` MOC curve**) and the **2D Airflow × $\text{O}_2\%$ Quenching & Blowoff Regime Map** (diffusive self-extinguishment $< 1.5\text{ cm/s}$ and high-flow blowoff $> 32\text{ cm/s}$).
+       - **Interactive 2D Contour Maps:** Click-to-set HTML5 `<canvas>` contour maps for the **2D Pressure × $\text{O}_2\%$ Flammability Envelope** (comparing **$0g$ Microgravity MOC** vs. **$1g$ `NASA-STD-6001` MOC**, with `[map edge 45%]` indicator for >45% $\text{O}_2$ EVA/CFI-G states) and the **2D Airflow × $\text{O}_2\%$ Quenching & Blowoff Regime Map** (diffusive self-extinguishment $< 1.5\text{ cm/s}$ and high-flow blowoff $> 32\text{ cm/s}$).
        - **🚨 Spacecraft Fire Detection, Suppression & Post-Fire Cleanup Advisor (`SAME`, `DAFT / DAFT-2`, `SLICE`, `SAFFIRE IV–VI`, `MGM`):** Recommends optimal smoke detector modality (Laser Photoelectric Scattering vs. Americium-241 Ionization based on $0g$ vs. $1g$ smoke Count Median Diameter $\mu\text{m}$), `DAFT-2` Lunar Regolith Dust ($M_1/M_0$ moment ratio) false-alarm mitigation, a 4-modality `SLICE` fire suppressant matrix (`Fine Water Mist`, `CO₂ Flood`, `N₂ Dilution`, `Halon Replacement CF₃I`), peak $\text{CO}$ ppm vs. NASA 1-hr/24-hr SMAC (`55 ppm` / `20 ppm`), toxic pyrolysis gases ($\text{HCN}$, $\text{HF}/\text{COF}_2$, $\text{SiO}_2$ ash), and a 4-step `SAFFIRE-VI` post-fire ECLSS scrubbing protocol.
        - **📜 Exportable Mission Fire-Safety Dossier (`.md` & Print-Ready A4 PDF Certificate):** Generates an auditable certification report with a deterministic ID (`IGNIS-CERT-...`), `experiments.parquet` SHA-256 fingerprint, formal `PASS` / `CONDITIONAL PASS` / `WAIVER REQUIRED` determination, and an embedded vector SVG 2D MOC Boundary Chart.
-     - `#/dashboard` **Dataset & Quality Audit Dashboard:** Visualizes family distributions and data-hygiene guardrails.
-     - `#/ask` **Grounded Multi-Document + Tabular Hybrid RAG Q&A & Live 65-Question Benchmark Scorecard:** Interactive natural-language Q&A with clickable `[ID]` citation chips, `QueryPlan` inspector, sortable evidence table, **📚 Grounded NASA PSI Dossiers & NTRS Literature Context** cards, and a live **65/65 (100.0%) Golden Benchmark Scorecard** tab.
+     - `#/dashboard` **05 Analytics (`Dashboard.tsx`):** Visualizes corpus coverage KPIs, Earth/Moon/Spacesuit $\text{O}_2$ & pressure context bars, NASA investigation hardware groupings (`ACME`, `FLEX/CFI`, `BASS`, `SPICE/SLICE`, `Saffire`, `SAME/DAFT`), and explicit dataset guardrails.
+     - `#/ask` **Ask IGNIS (`App.tsx`):** Grounded Multi-Doc + Tabular Hybrid RAG Q&A with clickable `[ID]` citation chips, `QueryPlan` inspector, sortable evidence table, **📚 Grounded NASA PSI Dossiers & NTRS Literature Context** cards, and a live **65/65 (100.0%) Golden Benchmark Scorecard** tab.
 
 2. **Deterministic Ingestion & Provenance Auditing (`src/flame/ingestion/`):**
    - Consolidates 17 NASA/JAXA source CSV datasets (`BASS`, `BASS-II`, `SOFIE`, `SAFFIRE I–VI`, `FLEX`, `FLEX-2`, `ACME` suite, `SLICE`, `MGM`, `SAME`, `SPICE`, `DAFT`, `FLARE`, `GRC Drop Tower`, and `NASA-STD-6001`) plus live NASA Physical Sciences Informatics (**PSI**) metadata (`data/raw/psi/`) into a validated Parquet snapshot (`data/processed/experiments.parquet`).
@@ -38,6 +39,73 @@ An interactive **React 19 + TypeScript + Vite** decision-support application (wi
 4. **Grounded RAG with Post-Generation Guardrails & 65/65 Golden Benchmark (`src/flame/rag/`, `evaluation/`):**
    - Verifies every inline citation (`[BASS-B1]`, `[SOFIE-001]`, `[FLEX2-F2-05]`, etc.) against retrieved evidence rows, pairs tabular evidence with grounded NASA PSI/NTRS literature passages, checks numeric grounding within $10^{-4}$ relative tolerance, enforces modeled-row disclosures, and warns on semantically incomparable cross-family aggregations (`burning_rate_mms`).
    - Works **100% offline** via `LocalHeuristicLLMClient` and passes **65/65 (100.0%)** golden benchmark questions in `evaluation/run_eval.py` across Single-Filter, Multi-Filter, Aggregation, Ranking, Qualitative Hybrid RRF, Guardrail Refusal, and Adversarial Injection categories.
+
+---
+
+## 🗺️ Website Sections & System Architecture
+
+### What Each Website Section Does (`SiteNav` Routes)
+
+| Nav Label | Hash Route | Component | Core Purpose & Interactive Features |
+| :--- | :--- | :--- | :--- |
+| **01 Overview** | `#/` | `Home.tsx` | Mission control landing page featuring the animated $0g$ flame orb HUD, live telemetry KPIs (`StatStrip`), **1g vs. 0g Gravity Regime Comparator**, 4-stage pipeline summary, **6 clickable measured NASA PSI telemetry cards** (`DetailDrawer`), and trust guardrails. |
+| **02 Explorer** | `#/explorer` | `Explorer.tsx` | Full **892-row dataset browser** across 30 families with free-text search, opt-in `Include 52 Modeled Partial-g Rows`, **Fixed vs. Varied Experimental Variables & Sensors Summary** (`summarizeVariables`), quality flags, and 44-column slide-over `DetailDrawer`. |
+| **03 Physics Lab** | `#/insights` | `Insights.tsx` | 5-tab synthesis workspace: **Top 5 Ranked Findings**, **Historical Spacecraft Incidents (4)**, **Family Criticality Ranking (30)**, **Investigation Objectives & Comparator (24)** (side-by-side PSI study comparator + 4 quick NASA presets + searchable objectives), and **Live NASA PSI Tables & Dossiers**. |
+| **04 Risk Simulator** | `#/simulator` | `Simulator.tsx` | Spacecraft & lunar habitat flammability engine with **6 presets** (`ISS`, `Artemis SEA`, `Lunar Interim 30%`, `EVA 100%`, `ACME CFI-G 85%`, `Fans Off`), **`12%–100% O₂`** / **`20–120 kPa (psi)`** / **`0–55 cm/s`** controls, 13 materials, **90% ensemble CI**, **7D Physics Diagnostics**, **2 click-to-set 2D MOC & Airflow `<canvas>` maps**, **Detection/Suppression Advisor**, 5-NN NASA matches, and `.md` / Print PDF Dossier export. |
+| **05 Analytics** | `#/dashboard` | `Dashboard.tsx` | Corpus audit dashboard displaying KPI totals (`StatStrip`), Earth/Moon/Spacesuit $\text{O}_2$ & pressure context bars, **6-group NASA Investigation Hardware Map** (`ACME`, `FLEX/CFI`, `BASS`, `SPICE/SLICE`, `Saffire`, `SAME/DAFT`), and dataset limitation rules. |
+| **Ask IGNIS** | `#/ask` | `App.tsx` | Grounded AI analyst with two tabs: **Grounded Q&A** (question bar, `ModeledToggle`, `LimitationsBanner`, clickable `[exp_id]` citation chips, `QueryPlan` inspector, sortable `EvidenceTable`, top-4 `LiteratureRetriever` NASA PSI/NTRS cards) and **65-Question Golden Benchmark Scorecard**. |
+
+### Website Navigation & Feature Flowchart
+
+```mermaid
+flowchart TD
+    NAV["SiteNav Pill Bar (Theme Toggle + FlameBackground Canvas)"]
+    NAV --> R1["01 Overview (#/)"]
+    NAV --> R2["02 Explorer (#/explorer)"]
+    NAV --> R3["03 Physics Lab (#/insights)"]
+    NAV --> R4["04 Risk Simulator (#/simulator)"]
+    NAV --> R5["05 Analytics (#/dashboard)"]
+    NAV --> R6["Ask IGNIS (#/ask)"]
+
+    R1 --> R1A["1g vs 0g Regime Comparator + Live KPI Strip"]
+    R1 --> R1B["6 Clickable Measured PSI Samples -> DetailDrawer"]
+
+    R2 --> R2A["30-Family Filter + Search + Modeled Toggle"]
+    R2 --> R2B["Fixed vs Varied Variables & Sensors Matrix"]
+    R2 --> R2C["Sortable 892-Row Table -> 44-Column DetailDrawer"]
+
+    R3 --> R3A["Top 5 Ranked Findings + 4 Spacecraft Incidents"]
+    R3 --> R3B["30 Family Rankings + Live PSI CSV Tables"]
+    R3 --> R3C["24-Study Objectives & Side-by-Side Comparator"]
+
+    R4 --> R4A["6 Presets + 12-100% O2 / 20-120 kPa / 13 Materials"]
+    R4 --> R4B["7D Physics Diagnostics + 90% Ensemble CI"]
+    R4 --> R4C["Click-to-Set 2D MOC & Airflow Quench Maps"]
+    R4 --> R4D["SAME/DAFT/SLICE/SAFFIRE Advisor + PDF/MD Dossier"]
+
+    R5 --> R5A["Earth / Moon 30% / EVA 100% Context Bars"]
+    R5 --> R5B["6 NASA Hardware Rigs + Data Guardrail Caveats"]
+
+    R6 --> R6A["Hybrid SQL + BGE/BM25 RAG with [ID] Citation Chips"]
+    R6 --> R6B["65-Question Golden Benchmark Scorecard"]
+```
+
+### End-to-End Backend Data, RAG & Physics Pipeline
+
+```mermaid
+flowchart LR
+    RAW["17 NASA/JAXA CSVs + 31 PSI/NTRS Dossiers"] --> ING["Ingestion & Pandera 44-Col SI Schema"]
+    ING --> PARQ["experiments.parquet (840 0g + 52 Modeled + 42 Quarantined)"]
+    PARQ --> SQL["SQLite ExperimentStore (Measured-by-Default Guardrail)"]
+    PARQ --> VEC["Hybrid Vector Store (BAAI/bge-small-en-v1.5 + BM25 RRF)"]
+    RAW --> VEC
+
+    SQL --> API["FastAPI Backend (/api/v1/*)"]
+    VEC --> API
+    PARQ --> ENG["FlammabilityEngine (7D Physics + GBR/RF Ensemble + Advisor)"]
+    ENG --> API
+    API --> SPA["React 19 + TypeScript SPA (web/)"]
+```
 
 ---
 
@@ -65,14 +133,15 @@ NSAP/
 │   │   │   ├── EvidenceTable.tsx   # Sortable evidence table with provenance flags
 │   │   │   └── DetailDrawer.tsx    # Slide-over 44-column provenance & audit drawer
 │   │   ├── pages/
-│   │   │   ├── Home.tsx            # Hero, live KPI counter strip & architecture overview
-│   │   │   ├── Explorer.tsx        # 892-row interactive dataset & provenance explorer
-│   │   │   ├── Insights.tsx        # Top 5 findings, 4 historical incidents & live PSI CSV tables
-│   │   │   ├── Simulator.tsx       # 2D MOC canvas, Physics Diagnostics, Detection/Suppression & Dossier Export
-│   │   │   └── Dashboard.tsx       # Dataset family breakdown & data quality audit
+│   │   │   ├── SiteNav.tsx         # Floating pill nav (01 Overview..05 Analytics, Ask IGNIS) & theme toggle
+│   │   │   ├── Home.tsx            # 01 Overview: 0g orb HUD, KPIs, 1g vs 0g comparator & clickable samples
+│   │   │   ├── Explorer.tsx        # 02 Explorer: 892-row browser, Variable Matrix & 44-col DetailDrawer
+│   │   │   ├── Insights.tsx        # 03 Physics Lab: 5 tabs incl. 24-study Objectives & Comparator
+│   │   │   ├── Simulator.tsx       # 04 Risk Simulator: 12-100% O2, 2D MOC canvas, Advisor & Dossier Export
+│   │   │   └── Dashboard.tsx       # 05 Analytics: O2/pressure context bars, hardware map & data guardrails
 │   │   ├── lib/                    # Citation parser, remark plugin, sorting & example questions
-│   │   └── App.tsx                 # Grounded Multi-Doc Hybrid RAG Q&A + Live 65/65 Benchmark Scorecard
-│   └── tests/                      # 36 Vitest + Testing Library unit & integration tests
+│   │   └── App.tsx                 # Ask IGNIS: Grounded Multi-Doc Hybrid RAG Q&A + 65/65 Benchmark Scorecard
+│   └── tests/                      # 38 Vitest + Testing Library unit & integration tests
 ├── frontend/                       # Companion Streamlit interactive dashboard (:8501)
 │   ├── app.py                      # Mission Control Home (KPIs, caveats, atmosphere envelope)
 │   ├── pages/
@@ -99,7 +168,7 @@ NSAP/
 ├── certs/                          # Intermediate CA certificate for strict TLS verification
 ├── docs/                           # data_dictionary.md, architecture.md, audit & ADRs
 ├── tests/                          # 174 Python unit & API integration tests (pytest)
-├── procedure.md                    # Detailed architecture & execution roadmap
+├── explanation.md                  # End-to-end architecture, physics, UI & benchmark walkthrough
 └── requirements.txt
 ```
 
@@ -166,12 +235,12 @@ PYTHONPATH=src:. python evaluation/run_eval.py
 
 ## 🧪 Running Tests & Evaluation
 
-Run the full Python backend test suite (**174 passed**), the React frontend test suite (**36 passed**), and the 65-question golden benchmark (**65/65 = 100.0%**):
+Run the full Python backend test suite (**174 passed, 1 skipped**), the React frontend test suite (**38 passed** across 5 files), and the 65-question golden benchmark (**65/65 = 100.0%**):
 ```bash
 PYTHONPATH=src:. .venv/bin/pytest -q tests/
 npm test --prefix web
 PYTHONPATH=src:. .venv/bin/python evaluation/run_eval.py
-PYTHONPATH=src:. .venv/bin/uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload;
+PYTHONPATH=src:. .venv/bin/uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 ---
