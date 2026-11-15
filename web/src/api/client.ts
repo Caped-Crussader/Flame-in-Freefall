@@ -1,5 +1,17 @@
 import { ApiError, type AskResult, type EvidenceRow, type Meta } from '../types';
 import { isObj, normalizeAsk, normalizeMeta, normalizeRow } from './normalize';
+import {
+  askStatic,
+  generateStaticDossier,
+  getStaticEvaluation,
+  getStaticExperimentDetail,
+  getStaticExperiments,
+  getStaticInsightsRanking,
+  getStaticMeta,
+  isStaticDemoMode,
+  markStaticDemoMode,
+  simulateStaticRisk,
+} from './staticDemo';
 
 const BASE = '/api/v1';
 
@@ -21,30 +33,71 @@ async function toApiError(res: Response): Promise<ApiError> {
   return new ApiError(message, requestId, res.status);
 }
 
+class StaticBackendUnavailableError extends Error {}
+
+function isJsonContentType(res: Response): boolean {
+  const ct = (res.headers.get('content-type') || '').toLowerCase();
+  return ct.includes('application/json');
+}
+
 async function request(path: string, init?: RequestInit): Promise<{ json: unknown; requestId: string | null }> {
+  if (isStaticDemoMode()) {
+    throw new StaticBackendUnavailableError('Static demo mode active');
+  }
   let res: Response;
   try {
     res = await fetch(BASE + path, init);
   } catch (e) {
     if (e instanceof DOMException && e.name === 'AbortError') throw e;
-    throw new ApiError('Could not reach the server. Check that the backend is running.');
+    throw new StaticBackendUnavailableError('Could not reach the server. Check that the backend is running.');
+  }
+  if (res.status === 404 || res.status === 405 || !isJsonContentType(res)) {
+    throw new StaticBackendUnavailableError(`API endpoint unavailable (${res.status || 'non-JSON'})`);
   }
   if (!res.ok) throw await toApiError(res);
   return { json: await res.json(), requestId: res.headers.get('x-request-id') };
 }
 
+async function withStaticFallback<T>(
+  liveCall: () => Promise<T>,
+  staticCall: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await liveCall();
+  } catch (err) {
+    if (err instanceof StaticBackendUnavailableError) {
+      try {
+        const res = await staticCall();
+        markStaticDemoMode();
+        return res;
+      } catch {
+        throw new ApiError(err.message);
+      }
+    }
+    throw err;
+  }
+}
+
 export async function getMeta(signal?: AbortSignal): Promise<Meta> {
-  return normalizeMeta((await request('/meta', { signal })).json);
+  const json = await withStaticFallback(
+    async () => (await request('/meta', { signal })).json,
+    () => getStaticMeta(),
+  );
+  return normalizeMeta(json);
 }
 
 /** One request, one response. No streaming. */
 export async function ask(question: string, signal?: AbortSignal): Promise<AskResult> {
-  const { json, requestId } = await request('/ask', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ question }),
-    signal,
-  });
+  const { json, requestId } = await withStaticFallback(
+    () =>
+      request('/ask', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question }),
+        signal,
+      }),
+    async () => ({ json: await askStatic(question), requestId: 'static-demo' }),
+  );
   return normalizeAsk(json, requestId);
 }
 
@@ -66,29 +119,39 @@ export async function getExperiments(
   },
   signal?: AbortSignal,
 ): Promise<PaginatedExperiments> {
-  const qs = new URLSearchParams();
-  if (params.dataset_family && params.dataset_family !== 'All') qs.set('dataset_family', params.dataset_family);
-  if (params.fuel_material && params.fuel_material !== 'All') qs.set('fuel_material', params.fuel_material);
-  if (params.gravity_condition && params.gravity_condition !== 'All') qs.set('gravity_condition', params.gravity_condition);
-  if (params.include_modeled !== undefined) qs.set('include_modeled', String(params.include_modeled));
-  qs.set('limit', String(params.limit ?? 100));
-  qs.set('offset', String(params.offset ?? 0));
-  const { json } = await request(`/experiments?${qs.toString()}`, { signal });
-  const raw = json as { total?: number; limit?: number; offset?: number; items?: unknown[] };
-  const items = (Array.isArray(raw.items) ? raw.items : [])
-    .map(normalizeRow)
-    .filter((r): r is EvidenceRow => r !== null);
-  return {
-    total: typeof raw.total === 'number' ? raw.total : items.length,
-    limit: typeof raw.limit === 'number' ? raw.limit : 100,
-    offset: typeof raw.offset === 'number' ? raw.offset : 0,
-    items,
-  };
+  return withStaticFallback(
+    async () => {
+      const qs = new URLSearchParams();
+      if (params.dataset_family && params.dataset_family !== 'All') qs.set('dataset_family', params.dataset_family);
+      if (params.fuel_material && params.fuel_material !== 'All') qs.set('fuel_material', params.fuel_material);
+      if (params.gravity_condition && params.gravity_condition !== 'All') qs.set('gravity_condition', params.gravity_condition);
+      if (params.include_modeled !== undefined) qs.set('include_modeled', String(params.include_modeled));
+      qs.set('limit', String(params.limit ?? 100));
+      qs.set('offset', String(params.offset ?? 0));
+      const { json } = await request(`/experiments?${qs.toString()}`, { signal });
+      const raw = json as { total?: number; limit?: number; offset?: number; items?: unknown[] };
+      const items = (Array.isArray(raw.items) ? raw.items : [])
+        .map(normalizeRow)
+        .filter((r): r is EvidenceRow => r !== null);
+      return {
+        total: typeof raw.total === 'number' ? raw.total : items.length,
+        limit: typeof raw.limit === 'number' ? raw.limit : 100,
+        offset: typeof raw.offset === 'number' ? raw.offset : 0,
+        items,
+      };
+    },
+    () => getStaticExperiments(params),
+  );
 }
 
 export async function getExperimentDetail(id: string, signal?: AbortSignal): Promise<EvidenceRow> {
-  const { json } = await request(`/experiments/${encodeURIComponent(id)}`, { signal });
-  return json as EvidenceRow;
+  return withStaticFallback(
+    async () => {
+      const { json } = await request(`/experiments/${encodeURIComponent(id)}`, { signal });
+      return json as EvidenceRow;
+    },
+    () => getStaticExperimentDetail(id),
+  );
 }
 
 export interface InsightsPayload {
@@ -167,8 +230,13 @@ export interface InsightsPayload {
 }
 
 export async function getInsightsRanking(signal?: AbortSignal): Promise<InsightsPayload> {
-  const { json } = await request('/insights/ranking', { signal });
-  return json as InsightsPayload;
+  return withStaticFallback(
+    async () => {
+      const { json } = await request('/insights/ranking', { signal });
+      return json as InsightsPayload;
+    },
+    () => getStaticInsightsRanking(),
+  );
 }
 
 export interface RiskSimulationInput {
@@ -291,13 +359,18 @@ export async function simulateRisk(
   input: RiskSimulationInput,
   signal?: AbortSignal,
 ): Promise<RiskSimulationResult> {
-  const { json } = await request('/insights/risk', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
-    signal,
-  });
-  return json as RiskSimulationResult;
+  return withStaticFallback(
+    async () => {
+      const { json } = await request('/insights/risk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(input),
+        signal,
+      });
+      return json as RiskSimulationResult;
+    },
+    () => simulateStaticRisk(input),
+  );
 }
 
 export interface MissionSafetyDossier {
@@ -315,13 +388,18 @@ export async function generateSafetyDossier(
   input: RiskSimulationInput,
   signal?: AbortSignal,
 ): Promise<MissionSafetyDossier> {
-  const { json } = await request('/insights/dossier', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
-    signal,
-  });
-  return json as MissionSafetyDossier;
+  return withStaticFallback(
+    async () => {
+      const { json } = await request('/insights/dossier', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(input),
+        signal,
+      });
+      return json as MissionSafetyDossier;
+    },
+    () => generateStaticDossier(input),
+  );
 }
 
 export interface EvaluationScorecard {
@@ -360,16 +438,26 @@ export interface EvaluationScorecard {
 }
 
 export async function getEvaluation(signal?: AbortSignal): Promise<EvaluationScorecard> {
-  const { json } = await request('/evaluation', { signal });
-  return json as EvaluationScorecard;
+  return withStaticFallback(
+    async () => {
+      const { json } = await request('/evaluation', { signal });
+      return json as EvaluationScorecard;
+    },
+    () => getStaticEvaluation(),
+  );
 }
 
 export async function runEvaluation(signal?: AbortSignal): Promise<EvaluationScorecard> {
-  const { json } = await request('/evaluation/run', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: '{}',
-    signal,
-  });
-  return json as EvaluationScorecard;
+  return withStaticFallback(
+    async () => {
+      const { json } = await request('/evaluation/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+        signal,
+      });
+      return json as EvaluationScorecard;
+    },
+    () => getStaticEvaluation(),
+  );
 }

@@ -1,0 +1,6 @@
+services:
+  - type: web
+    name: ignis-flame-in-freefall
+    runtime: static
+    buildCommand: npm ci --prefix web && npm run build --prefix web
+    staticPublishPath: web/dist
