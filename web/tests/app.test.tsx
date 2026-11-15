@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import App from '../src/App';
 import { ErrorState } from '../src/components/States';
+import { Explorer } from '../src/pages/Explorer';
+import { Insights } from '../src/pages/Insights';
 import { Simulator } from '../src/pages/Simulator';
 import { ApiError } from '../src/types';
 import { RAW_ASK, RAW_META } from './fixtures';
@@ -241,5 +243,118 @@ describe('Simulator (Priority 2 & Priority 3 UI Verification)', () => {
       const lastCall = fetchMock.mock.calls[fetchMock.mock.calls.length - 1];
       expect(JSON.parse(String(lastCall[1]?.body)).fuel_material).toBe('Overheated Kapton-Insulated Wire');
     });
+
+    fireEvent.click(screen.getByRole('button', { name: /EVA Spacesuit/ }));
+    await waitFor(() => {
+      const fetchMock = globalThis.fetch as unknown as ReturnType<typeof vi.fn>;
+      const lastCall = fetchMock.mock.calls[fetchMock.mock.calls.length - 1];
+      const payload = JSON.parse(String(lastCall[1]?.body));
+      expect(payload.oxygen_pct).toBe(100);
+      expect(payload.pressure_kpa).toBe(29.6);
+    });
+  });
+});
+
+describe('Insights Comparator & Explorer Variables Summary', () => {
+  it('renders Side-by-Side PSI Investigation Comparator and Objectives directory', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        json({
+          findings: [],
+          historical_incidents: [],
+          family_rankings: [
+            {
+              dataset_family: 'SAME (Aerosol)',
+              experiments_count: 18,
+              criticality_score: 62,
+              sustained_burn_rate_pct: 55,
+              mean_oxygen_pct: 21,
+              max_oxygen_pct: 21,
+              min_pressure_kpa: 101.3,
+              mean_burning_rate_mms: null,
+              mean_flame_temp_k: 950,
+              sample_id: 'SAME-AERO-001',
+            },
+          ],
+          psi_dossiers: [],
+          psi_experimental_tables: [],
+          psi_investigations: [
+            {
+              accession: 'PSI-102',
+              acronym: 'SAME',
+              title: 'Smoke and Aerosol Measurement Experiment',
+              sub_area: 'Fire Safety',
+              platform: 'ISS',
+              hardware: 'MSG Aerosol Instrument',
+              objectives: 'Measure microgravity smoke particle size distributions.',
+            },
+            {
+              accession: 'PSI-47',
+              acronym: 'DAFT',
+              title: 'Dust and Aerosol Measurement Feasibility Test',
+              sub_area: 'Aerosol Discrimination',
+              platform: 'ISS',
+              hardware: 'MSG Aerosol Instrument (SAME hardware)',
+              objectives: 'Test dust discrimination using the SAME smoke instrument.',
+            },
+          ],
+        }),
+      ),
+    );
+
+    render(<Insights />);
+    const cmpBtn = await screen.findByRole('button', { name: /Investigation Objectives & Comparator/ });
+    fireEvent.click(cmpBtn);
+    expect(await screen.findByText(/Side-by-Side PSI Investigation Comparator/)).toBeTruthy();
+    expect(screen.getAllByText(/Measure microgravity smoke particle size distributions/).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText(/Test dust discrimination using the SAME smoke instrument/).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('computes Fixed vs. Varied variables and sensors in Explorer', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        json({
+          total: 2,
+          limit: 200,
+          offset: 0,
+          items: [
+            {
+              experiment_id: 'BASS-001',
+              dataset_family: 'BASS-II',
+              fuel_material: 'PMMA',
+              oxygen_pct: 18,
+              pressure_kpa: 101.3,
+              gravity_condition: '0g',
+              extinction_outcome: 'Sustained',
+              facility_hardware: 'ISS MSG Flow Duct',
+              airflow_velocity_cms: 5,
+              burning_rate_mms: 1.2,
+              flame_temp_k: 1480,
+            },
+            {
+              experiment_id: 'BASS-002',
+              dataset_family: 'BASS-II',
+              fuel_material: 'PMMA',
+              oxygen_pct: 21,
+              pressure_kpa: 101.3,
+              gravity_condition: '0g',
+              extinction_outcome: 'Sustained',
+              facility_hardware: 'ISS MSG Flow Duct',
+              airflow_velocity_cms: 12,
+              burning_rate_mms: 1.8,
+              flame_temp_k: 1550,
+            },
+          ],
+        }),
+      ),
+    );
+
+    render(<Explorer meta={null} />);
+    expect(await screen.findByLabelText('Investigation variable matrix')).toBeTruthy();
+    expect(screen.getByText(/Hardware Rig: ISS MSG Flow Duct/)).toBeTruthy();
+    expect(screen.getByText(/O₂ Concentration: 18–21 % O₂/)).toBeTruthy();
+    expect(screen.getByText(/Flame Temp \(K\) \(2\)/)).toBeTruthy();
   });
 });

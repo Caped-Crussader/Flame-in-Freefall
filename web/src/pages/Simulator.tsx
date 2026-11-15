@@ -191,7 +191,12 @@ function MocEnvelopeCanvas({
     ctx.stroke();
     ctx.fillStyle = '#fef08a';
     ctx.font = '700 11px JetBrains Mono, monospace';
-    ctx.fillText(`Selected (${oxygen.toFixed(1)}% O₂, ${pressure.toFixed(1)} kPa)`, Math.min(W - 190, Math.max(padL + 6, ux - 60)), uy + 18);
+    const clampedHint = oxygen > o2Max ? ' [map edge 45%]' : '';
+    ctx.fillText(
+      `Selected (${oxygen.toFixed(1)}% O₂, ${pressure.toFixed(1)} kPa)${clampedHint}`,
+      Math.min(W - 220, Math.max(padL + 6, ux - 60)),
+      uy + 18,
+    );
     ctx.restore();
 
     // 7. Axes labels & ticks
@@ -526,8 +531,14 @@ export function Simulator() {
         <button type="button" className="nx-btn" onClick={() => applyPreset(34.0, 56.5, 10.0)}>
           🌙 Artemis Lunar Habitat (34% O₂, 56.5 kPa)
         </button>
-        <button type="button" className="nx-btn ghost" onClick={() => applyPreset(26.5, 70.3, 6.0)}>
-          👨‍🚀 EVA Pre-Breathe (26.5% O₂, 70.3 kPa)
+        <button type="button" className="nx-btn ghost" onClick={() => applyPreset(30.0, 70.3, 6.0)}>
+          🌓 Lunar Interim (30% O₂, 70.3 kPa / 10.2 psi)
+        </button>
+        <button type="button" className="nx-btn ghost" onClick={() => applyPreset(100.0, 29.6, 2.0)}>
+          👩‍🚀 EVA Spacesuit (100% O₂, 29.6 kPa / 4.3 psi)
+        </button>
+        <button type="button" className="nx-btn ghost" onClick={() => applyPreset(85.0, 101.3, 4.0)}>
+          🔵 ACME CFI-G Extreme (85% O₂, 101.3 kPa)
         </button>
         <button type="button" className="nx-btn ghost" onClick={() => applyPreset(21.0, 101.3, 0.0)}>
           🛑 Fans Off / Quiescent (21% O₂, 0 cm/s)
@@ -550,7 +561,7 @@ export function Simulator() {
               id="sim-o2"
               type="range"
               min={12}
-              max={48}
+              max={100}
               step={0.5}
               value={oxygen}
               onChange={(e) => setOxygen(Number(e.target.value))}
@@ -560,13 +571,16 @@ export function Simulator() {
 
           <div>
             <label className="lbl-strong" htmlFor="sim-kpa">
-              Cabin Pressure: <span className="mono">{pressure.toFixed(1)} kPa</span>
+              Cabin Pressure:{' '}
+              <span className="mono">
+                {pressure.toFixed(1)} kPa ({(pressure * 0.145038).toFixed(1)} psi)
+              </span>
             </label>
             <input
               id="sim-kpa"
               type="range"
-              min={25}
-              max={115}
+              min={20}
+              max={120}
               step={0.5}
               value={pressure}
               onChange={(e) => setPressure(Number(e.target.value))}

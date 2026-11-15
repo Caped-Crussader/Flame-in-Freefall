@@ -1,8 +1,80 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { getExperiments } from '../api/client';
 import { DetailDrawer } from '../components/DetailDrawer';
 import { Val } from '../components/Val';
 import type { EvidenceRow, Meta } from '../types';
+
+interface VariableSummary {
+  fixed: { label: string; value: string }[];
+  varied: { label: string; detail: string }[];
+  sensors: { label: string; count: number }[];
+}
+
+function summarizeVariables(rows: EvidenceRow[]): VariableSummary {
+  const uniq = (vals: (string | null | undefined)[]) =>
+    Array.from(new Set(vals.map((v) => (v ?? '').trim()).filter(Boolean)));
+
+  const numRange = (vals: unknown[], unit: string) => {
+    const nums = vals.filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
+    if (!nums.length) return null;
+    const min = Math.min(...nums);
+    const max = Math.max(...nums);
+    if (Math.abs(max - min) < 1e-6) return { fixed: `${min} ${unit}`, varied: null };
+    return { fixed: null, varied: `${min}–${max} ${unit} (${nums.length} runs)` };
+  };
+
+  const fixed: { label: string; value: string }[] = [];
+  const varied: { label: string; detail: string }[] = [];
+
+  const hw = uniq(rows.map((r) => r.facility_hardware));
+  if (hw.length === 1) fixed.push({ label: 'Hardware Rig', value: hw[0] });
+  else if (hw.length > 1) varied.push({ label: 'Hardware Rigs', detail: `${hw.length} (${hw.slice(0, 2).join(', ')}…)` });
+
+  const grav = uniq(rows.map((r) => r.gravity_condition));
+  if (grav.length === 1) fixed.push({ label: 'Gravity Regime', value: grav[0] });
+  else if (grav.length > 1) varied.push({ label: 'Gravity Regimes', detail: grav.join(', ') });
+
+  const fuels = uniq(rows.map((r) => r.fuel_material));
+  if (fuels.length === 1) fixed.push({ label: 'Fuel / Specimen', value: fuels[0] });
+  else if (fuels.length > 1)
+    varied.push({ label: 'Fuels / Specimens', detail: `${fuels.length} distinct (${fuels.slice(0, 3).join(', ')}${fuels.length > 3 ? '…' : ''})` });
+
+  const flowDir = uniq(rows.map((r) => r.raw.flow_direction as string | null | undefined));
+  if (flowDir.length === 1) fixed.push({ label: 'Flow Direction', value: flowDir[0] });
+  else if (flowDir.length > 1) varied.push({ label: 'Flow Directions', detail: flowDir.join(' vs. ') });
+
+  const checks: [string, unknown[], string][] = [
+    ['O₂ Concentration', rows.map((r) => r.oxygen_pct), '% O₂'],
+    ['Cabin Pressure', rows.map((r) => r.pressure_kpa), 'kPa'],
+    ['Airflow Velocity', rows.map((r) => r.raw.airflow_velocity_cms), 'cm/s'],
+    ['Sample / Droplet Diameter', rows.map((r) => r.raw.initial_diameter_mm), 'mm'],
+    ['Specimen Thickness', rows.map((r) => r.raw.specimen_thickness_cm), 'cm'],
+  ];
+
+  for (const [label, vals, unit] of checks) {
+    const res = numRange(vals, unit);
+    if (!res) continue;
+    if (res.fixed) fixed.push({ label, value: res.fixed });
+    else if (res.varied) varied.push({ label, detail: res.varied });
+  }
+
+  const sensorDefs: [string, string][] = [
+    ['Flame Temp (K)', 'flame_temp_k'],
+    ['Burn / Spread Rate (mm/s)', 'burning_rate_mms'],
+    ['CO Yield (ppm)', 'co_ppm'],
+    ['Extinction Dia. (mm)', 'extinction_diameter_mm'],
+    ['Burn Time (s)', 'burn_time_s'],
+    ['Ignition Power (W)', 'ignition_power_w'],
+  ];
+  const sensors = sensorDefs
+    .map(([label, key]) => ({
+      label,
+      count: rows.filter((r) => typeof r.raw[key] === 'number' && Number.isFinite(r.raw[key] as number)).length,
+    }))
+    .filter((s) => s.count > 0);
+
+  return { fixed, varied, sensors };
+}
 
 export function Explorer({ meta }: { meta: Meta | null }) {
   const [family, setFamily] = useState<string>('All');
@@ -35,16 +107,22 @@ export function Explorer({ meta }: { meta: Meta | null }) {
 
   const families = ['All', ...(meta?.dataset_families ?? [])];
 
-  const filtered = rows.filter((r) => {
-    if (!search.trim()) return true;
-    const q = search.trim().toLowerCase();
-    return (
-      String(r.experiment_id ?? '').toLowerCase().includes(q) ||
-      String(r.fuel_material ?? '').toLowerCase().includes(q) ||
-      String(r.raw.notes ?? '').toLowerCase().includes(q) ||
-      String(r.extinction_outcome ?? '').toLowerCase().includes(q)
-    );
-  });
+  const filtered = useMemo(
+    () =>
+      rows.filter((r) => {
+        if (!search.trim()) return true;
+        const q = search.trim().toLowerCase();
+        return (
+          String(r.experiment_id ?? '').toLowerCase().includes(q) ||
+          String(r.fuel_material ?? '').toLowerCase().includes(q) ||
+          String(r.raw.notes ?? '').toLowerCase().includes(q) ||
+          String(r.extinction_outcome ?? '').toLowerCase().includes(q)
+        );
+      }),
+    [rows, search],
+  );
+
+  const varSummary = useMemo(() => summarizeVariables(filtered), [filtered]);
 
   return (
     <main className="nx-page" id="main">
@@ -52,12 +130,12 @@ export function Explorer({ meta }: { meta: Meta | null }) {
         <p className="nx-eyebrow">892 Validated Records · 44 Provenance Columns</p>
         <h1 className="sm">Experiment & Provenance Explorer</h1>
         <p className="nx-lead">
-          Filter across 30 NASA/JAXA microgravity combustion dataset families, inspect quarantined sensor flags, and
-          click any record to open its 44-column provenance dossier.
+          Filter across 30 NASA/JAXA microgravity combustion dataset families, inspect fixed vs. varied parameters
+          within each investigation, and click any record to open its 44-column provenance dossier.
         </p>
       </header>
 
-      <section className="nx-card" style={{ marginBottom: 24 }}>
+      <section className="nx-card" style={{ marginBottom: 20 }}>
         <div
           style={{
             display: 'grid',
@@ -131,6 +209,86 @@ export function Explorer({ meta }: { meta: Meta | null }) {
           <span className="k">Click any Experiment ID to open full 44-column provenance drawer</span>
         </div>
       </section>
+
+      {!loading && filtered.length > 0 && (
+        <section
+          className="nx-card"
+          style={{ marginBottom: 20, padding: '16px 20px' }}
+          aria-label="Investigation variable matrix"
+        >
+          <div className="row between" style={{ marginBottom: 12 }}>
+            <div className="nx-card-num">
+              {family === 'All'
+                ? 'CORPUS-WIDE PARAMETER & MEASUREMENT SUMMARY'
+                : `${family.toUpperCase()} — FIXED VS. VARIED EXPERIMENTAL VARIABLES`}
+            </div>
+            <span className="k mono" style={{ fontSize: 11 }}>
+              {filtered.length} runs analyzed
+            </span>
+          </div>
+
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+              gap: 14,
+            }}
+          >
+            <div>
+              <div className="k" style={{ fontSize: 12, marginBottom: 6 }}>
+                <strong style={{ color: 'var(--electric-cyan)' }}>Fixed / Controlled</strong> (Same across visible runs)
+              </div>
+              {varSummary.fixed.length > 0 ? (
+                <div className="row">
+                  {varSummary.fixed.map((item) => (
+                    <span key={item.label} className="tag d mono" title={item.label}>
+                      {item.label}: {item.value}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="k" style={{ fontSize: 12 }}>
+                  Multiple hardware/atmospheres — filter to one family to isolate fixed rig parameters.
+                </p>
+              )}
+            </div>
+
+            <div>
+              <div className="k" style={{ fontSize: 12, marginBottom: 6 }}>
+                <strong style={{ color: 'var(--solar-orange)' }}>Varied Test Conditions</strong> (Swept across runs)
+              </div>
+              {varSummary.varied.length > 0 ? (
+                <div className="row">
+                  {varSummary.varied.map((item) => (
+                    <span key={item.label} className="tag i mono">
+                      {item.label}: {item.detail}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="k" style={{ fontSize: 12 }}>No varied numerical sweeps detected in current selection.</p>
+              )}
+            </div>
+
+            <div>
+              <div className="k" style={{ fontSize: 12, marginBottom: 6 }}>
+                <strong style={{ color: 'var(--ok)' }}>Sensors / Measured Observables</strong>
+              </div>
+              {varSummary.sensors.length > 0 ? (
+                <div className="row">
+                  {varSummary.sensors.map((s) => (
+                    <span key={s.label} className="tag mono">
+                      {s.label} ({s.count})
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="k" style={{ fontSize: 12 }}>Categorical extinction outcomes only.</p>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
 
       <section className="nx-card">
         {loading ? (
